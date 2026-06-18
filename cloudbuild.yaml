@@ -1,0 +1,56 @@
+substitutions:
+  _REGION: us-central1
+  _ARTIFACT_REGISTRY_REPO: resonancelab
+  _WEB_IMAGE: resonancelab-web
+  _API_IMAGE: resonancelab-api
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  - id: project-hygiene-and-api-tests
+    name: python:3.13-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        python -m pip install --upgrade pip
+        python -m pip install -r requirements-dev.txt
+        python scripts/check_project_docs.py --all
+        python -m compileall packages services/api scripts
+        python -m ruff check .
+        python -m pytest
+
+  - id: web-check-and-build
+    name: node:22-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        npm ci
+        npm --workspace @resonancelab/web run check
+        npm --workspace @resonancelab/web run build
+
+  - id: build-api-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - services/api/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_API_IMAGE}:$SHORT_SHA
+      - .
+
+  - id: build-web-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/web/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_WEB_IMAGE}:$SHORT_SHA
+      - .
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_API_IMAGE}:$SHORT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_WEB_IMAGE}:$SHORT_SHA

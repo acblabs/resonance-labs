@@ -1,0 +1,18 @@
+{
+  "name": "resonance-labs",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "api:dev": "python scripts/run_api.py",
+    "web:dev": "npm --workspace @resonancelab/web run dev",
+    "check:docs": "python scripts/check_project_docs.py --all",
+    "lint:api": "python -m ruff check .",
+    "test:api": "python -m pytest",
+    "check:api": "python -m compileall packages services/api scripts && python -m ruff check . && python -m pytest",
+    "check:web": "npm --workspace @resonancelab/web run check",
+    "build:web": "npm --workspace @resonancelab/web run build"
+  }
+}

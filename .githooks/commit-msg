@@ -1,0 +1,3 @@
+#!/bin/sh
+
+python scripts/check_project_docs.py --staged --commit-message "$1"

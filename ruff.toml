@@ -1,0 +1,14 @@
+target-version = "py313"
+line-length = 100
+exclude = [
+  ".git",
+  ".ruff_cache",
+  ".svelte-kit",
+  ".venv",
+  "apps/web/build",
+  "apps/web/node_modules",
+  "node_modules",
+]
+
+[lint]
+select = ["B", "E", "F", "I", "UP"]

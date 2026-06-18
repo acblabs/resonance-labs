@@ -1,0 +1,23 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      RESONANCELAB_ENV: local
+      RESONANCELAB_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    ports:
+      - "8000:8080"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      PUBLIC_API_URL: http://localhost:8000
+      HOST: 0.0.0.0
+      PORT: 8080
+    depends_on:
+      - api
+    ports:
+      - "5173:8080"

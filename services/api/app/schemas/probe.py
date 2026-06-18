@@ -1,0 +1,106 @@
+"""Pydantic schemas for probe configuration and analysis responses."""
+
+from __future__ import annotations
+
+from typing import Any, Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+class HealthResponse(BaseModel):
+    status: Literal["ok"]
+    service: str
+    version: str
+    environment: str
+
+
+class ProbeConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    signal_type: Literal["log_chirp"] = "log_chirp"
+    start_hz: int = Field(default=500, ge=100, le=18000)
+    end_hz: int = Field(default=10000, ge=200, le=20000)
+    duration_ms: int = Field(default=500, ge=100, le=1000)
+    pre_roll_ms: int = Field(default=250, ge=0, le=2000)
+    post_roll_ms: int = Field(default=1000, ge=100, le=4000)
+    amplitude: float = Field(default=0.35, ge=0.01, le=0.35)
+    fade_ms: int = Field(default=10, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def validate_frequency_order(self) -> ProbeConfig:
+        if self.start_hz >= self.end_hz:
+            raise ValueError("start_hz must be lower than end_hz.")
+        if self.fade_ms * 2 > self.duration_ms:
+            raise ValueError("fade_ms is too long for duration_ms.")
+        return self
+
+
+class BrowserCaptureMetadata(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    user_agent: str | None = None
+    audio_context_sample_rate_hz: int | None = Field(default=None, ge=8000, le=192000)
+    media_track_settings: dict[str, Any] = Field(default_factory=dict)
+    requested_constraints: dict[str, Any] = Field(default_factory=dict)
+    capture_path: Literal[
+        "audio_worklet", "script_processor", "media_recorder", "unknown"
+    ] = "unknown"
+    recording_started_at_context_seconds: float | None = None
+    chirp_started_at_context_seconds: float | None = None
+    chirp_ended_at_context_seconds: float | None = None
+    capture_ended_at_context_seconds: float | None = None
+
+
+class ProbeMetadata(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    profile_id: str | None = None
+    client_recorded_at: str | None = None
+    probe_config: ProbeConfig = Field(default_factory=ProbeConfig)
+    browser: BrowserCaptureMetadata = Field(default_factory=BrowserCaptureMetadata)
+
+    @field_validator("profile_id")
+    @classmethod
+    def blank_profile_is_none(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            return None
+        return value
+
+
+class ProbeConfigEnvelope(BaseModel):
+    default: ProbeConfig
+    limits: dict[str, Any]
+    upload: dict[str, Any]
+    warnings: list[str]
+
+
+class AudioUploadMetrics(BaseModel):
+    content_type: str
+    filename: str | None
+    byte_count: int
+    sample_rate_hz: int
+    channels: int
+    sample_width_bytes: int
+    frame_count: int
+    sample_count: int
+    duration_seconds: float
+    rms: float
+    peak_amplitude: float
+    dc_offset: float
+
+
+class AlignmentMetadata(BaseModel):
+    method: Literal["phase1_placeholder"]
+    confidence: float | None
+    estimated_latency_ms: float | None
+    notes: list[str]
+
+
+class AnalysisResponse(BaseModel):
+    analysis_id: UUID
+    status: Literal["ok"]
+    audio: AudioUploadMetrics
+    probe: ProbeMetadata
+    alignment: AlignmentMetadata
+    warnings: list[str]
