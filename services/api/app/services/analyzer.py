@@ -1,17 +1,31 @@
-"""Phase 1 upload validation and dummy audio analysis."""
+"""Upload validation and Phase 2 chirp DSP analysis."""
 
 from __future__ import annotations
 
 from uuid import uuid4
 
 from resonancelab.audio import WavDecodeError, decode_wav_pcm
-from resonancelab.dsp import compute_audio_metrics
+from resonancelab.dsp import (
+    ALIGNMENT_WARN_CONFIDENCE,
+    SNR_WARN_DB,
+    ChirpDspAnalysis,
+    ChirpSpec,
+    analyze_chirp_response,
+    compute_audio_metrics,
+)
 
 from app.schemas import (
     AlignmentMetadata,
     AnalysisResponse,
     AudioUploadMetrics,
+    DecayFeature,
+    DspAnalysis,
+    FrequencySeries,
+    PeakFeature,
     ProbeMetadata,
+    SpectralFeatures,
+    SpectrogramGrid,
+    TransferBandFeature,
 )
 from app.settings import Settings
 
@@ -53,10 +67,21 @@ def analyze_probe_upload(
     if metrics.duration_seconds > settings.max_recording_seconds:
         raise AnalyzeUploadError(
             f"Recording duration {metrics.duration_seconds:.2f}s exceeds the "
-            f"{settings.max_recording_seconds:.2f}s Phase 1 limit."
+            f"{settings.max_recording_seconds:.2f}s upload limit."
         )
 
-    warnings = _build_warnings(metadata=metadata, duration_seconds=metrics.duration_seconds)
+    dsp_analysis = analyze_chirp_response(
+        decoded.samples,
+        decoded.sample_rate_hz,
+        _chirp_spec_from_metadata(metadata),
+        pre_roll_seconds=metadata.probe_config.pre_roll_ms / 1000.0,
+        post_roll_seconds=metadata.probe_config.post_roll_ms / 1000.0,
+    )
+    warnings = _build_warnings(
+        metadata=metadata,
+        duration_seconds=metrics.duration_seconds,
+        dsp_analysis=dsp_analysis,
+    )
 
     return AnalysisResponse(
         analysis_id=uuid4(),
@@ -77,19 +102,24 @@ def analyze_probe_upload(
         ),
         probe=metadata,
         alignment=AlignmentMetadata(
-            method="phase1_placeholder",
-            confidence=None,
-            estimated_latency_ms=None,
-            notes=[
-                "Phase 1 confirms upload, decode, and signal metrics.",
-                "Matched-filter alignment lands in Phase 2.",
-            ],
+            method=dsp_analysis.alignment.method,
+            confidence=dsp_analysis.alignment.confidence,
+            estimated_latency_ms=dsp_analysis.alignment.estimated_latency_ms,
+            detected_start_seconds=dsp_analysis.alignment.detected_start_seconds,
+            expected_start_seconds=dsp_analysis.alignment.expected_start_seconds,
+            notes=_alignment_notes(dsp_analysis),
         ),
+        dsp=_dsp_response(dsp_analysis),
         warnings=warnings,
     )
 
 
-def _build_warnings(*, metadata: ProbeMetadata, duration_seconds: float) -> list[str]:
+def _build_warnings(
+    *,
+    metadata: ProbeMetadata,
+    duration_seconds: float,
+    dsp_analysis: ChirpDspAnalysis,
+) -> list[str]:
     warnings: list[str] = []
     settings = metadata.browser.media_track_settings
     for key in ("echoCancellation", "noiseSuppression", "autoGainControl"):
@@ -108,4 +138,95 @@ def _build_warnings(*, metadata: ProbeMetadata, duration_seconds: float) -> list
         warnings.append("Recording is shorter than expected for the probe configuration.")
     if duration_seconds > expected_duration * 1.5:
         warnings.append("Recording is longer than expected for the probe configuration.")
+    if dsp_analysis.alignment.confidence < ALIGNMENT_WARN_CONFIDENCE:
+        warnings.append("Chirp alignment confidence is low; DSP features may be unreliable.")
+    if (
+        dsp_analysis.signal_to_noise_db is not None
+        and dsp_analysis.signal_to_noise_db < SNR_WARN_DB
+    ):
+        warnings.append(
+            f"Signal-to-noise ratio is below the {SNR_WARN_DB:.0f} dB feasibility target."
+        )
+    if not dsp_analysis.dominant_peaks:
+        warnings.append("No dominant ring-down peaks cleared the Phase 2 prominence threshold.")
     return warnings
+
+
+def _chirp_spec_from_metadata(metadata: ProbeMetadata) -> ChirpSpec:
+    config = metadata.probe_config
+    return ChirpSpec(
+        start_hz=float(config.start_hz),
+        end_hz=float(config.end_hz),
+        duration_seconds=config.duration_ms / 1000.0,
+        amplitude=float(config.amplitude),
+        fade_seconds=config.fade_ms / 1000.0,
+    )
+
+
+def _alignment_notes(dsp_analysis: ChirpDspAnalysis) -> list[str]:
+    notes = [
+        "Matched-filter alignment uses the configured logarithmic chirp as the reference.",
+        "Transfer-response features are regularized magnitude ratios, not calibrated predictions.",
+    ]
+    if dsp_analysis.alignment.confidence < ALIGNMENT_WARN_CONFIDENCE:
+        notes.append(
+            "Low alignment confidence can indicate missing chirp audio or heavy browser processing."
+        )
+    return notes
+
+
+def _dsp_response(analysis: ChirpDspAnalysis) -> DspAnalysis:
+    return DspAnalysis(
+        bandpass_low_hz=analysis.bandpass_low_hz,
+        bandpass_high_hz=analysis.bandpass_high_hz,
+        signal_to_noise_db=analysis.signal_to_noise_db,
+        fft=SpectralFeatures(
+            series=FrequencySeries(
+                frequency_bins_hz=analysis.fft.series.frequency_bins_hz,
+                magnitude_db=analysis.fft.series.magnitude_db,
+            ),
+            centroid_hz=analysis.fft.centroid_hz,
+            bandwidth_hz=analysis.fft.bandwidth_hz,
+            rolloff_hz=analysis.fft.rolloff_hz,
+            spectral_floor_db=analysis.fft.spectral_floor_db,
+        ),
+        stft=SpectrogramGrid(
+            kind=analysis.stft.kind,
+            times_seconds=analysis.stft.times_seconds,
+            frequency_bins_hz=analysis.stft.frequency_bins_hz,
+            magnitude_db=analysis.stft.magnitude_db,
+        ),
+        mel_spectrogram=SpectrogramGrid(
+            kind=analysis.mel_spectrogram.kind,
+            times_seconds=analysis.mel_spectrogram.times_seconds,
+            frequency_bins_hz=analysis.mel_spectrogram.frequency_bins_hz,
+            magnitude_db=analysis.mel_spectrogram.magnitude_db,
+        ),
+        transfer_response=[
+            TransferBandFeature(
+                start_hz=band.start_hz,
+                end_hz=band.end_hz,
+                center_hz=band.center_hz,
+                mean_db=band.mean_db,
+                peak_db=band.peak_db,
+            )
+            for band in analysis.transfer_response
+        ],
+        dominant_peaks=[
+            PeakFeature(
+                frequency_hz=peak.frequency_hz,
+                magnitude_db=peak.magnitude_db,
+                prominence_db=peak.prominence_db,
+                q_factor=peak.q_factor,
+            )
+            for peak in analysis.dominant_peaks
+        ],
+        decay=DecayFeature(
+            method=analysis.decay.method,
+            decay_rate_per_second=analysis.decay.decay_rate_per_second,
+            rt60_seconds=analysis.decay.rt60_seconds,
+            fit_r2=analysis.decay.fit_r2,
+            window_start_seconds=analysis.decay.window_start_seconds,
+            window_end_seconds=analysis.decay.window_end_seconds,
+        ),
+    )

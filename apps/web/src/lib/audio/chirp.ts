@@ -72,16 +72,20 @@ export function clampProbeConfig(config: ProbeConfig): ProbeConfig {
 }
 
 function fadeGain(index: number, sampleCount: number, fadeSamples: number): number {
-  if (fadeSamples <= 0) {
+  const safeFadeSamples = Math.min(Math.max(0, fadeSamples), Math.floor(sampleCount / 2));
+  if (safeFadeSamples <= 0) {
     return 1;
   }
 
-  const fadeIn = cosineRamp(Math.min(1, index / fadeSamples));
-  const fadeOut = cosineRamp(Math.min(1, (sampleCount - index - 1) / fadeSamples));
+  const fadeIn = index < safeFadeSamples ? cosineRamp(index, safeFadeSamples) : 1;
+  const samplesFromEnd = sampleCount - index - 1;
+  const fadeOut =
+    samplesFromEnd < safeFadeSamples ? cosineRamp(samplesFromEnd, safeFadeSamples) : 1;
   return Math.max(0, Math.min(fadeIn, fadeOut));
 }
 
-function cosineRamp(position: number): number {
+function cosineRamp(index: number, rampSamples: number): number {
+  const position = rampSamples <= 1 ? 0 : index / (rampSamples - 1);
   return 0.5 - 0.5 * Math.cos(Math.PI * position);
 }
 

@@ -1,4 +1,4 @@
-"""HTTP routes for the Phase 1 API."""
+"""HTTP routes for the ResonanceLab API."""
 
 from __future__ import annotations
 
@@ -8,7 +8,14 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import ValidationError
 
-from app.schemas import HealthResponse, ProbeConfig, ProbeConfigEnvelope, ProbeMetadata
+from app.schemas import (
+    AnalysisResponse,
+    HealthResponse,
+    ModelsResponse,
+    ProbeConfig,
+    ProbeConfigEnvelope,
+    ProbeMetadata,
+)
 from app.services import AnalyzeUploadError, analyze_probe_upload
 from app.settings import get_settings
 
@@ -51,29 +58,29 @@ async def probe_config() -> ProbeConfigEnvelope:
         },
         warnings=[
             "Do not run active probes through headphones or earbuds.",
-            "Phase 1 returns dummy alignment metadata; calibrated DSP starts in Phase 2.",
+            "Phase 2 DSP metrics are experimental and are not fill-level predictions.",
         ],
     )
 
 
-@router.get("/api/v1/models")
-async def models() -> dict[str, object]:
-    return {
-        "active_model": None,
-        "phase": "phase_1_dummy_analysis",
-        "notes": [
-            "No ML model is loaded in Phase 1.",
-            "The analyze endpoint returns upload and signal sanity metrics only.",
+@router.get("/api/v1/models", response_model=ModelsResponse)
+async def models() -> ModelsResponse:
+    return ModelsResponse(
+        active_model=None,
+        phase="phase_2_dsp_mvp",
+        notes=[
+            "No ML model is loaded.",
+            "The analyze endpoint returns chirp-aligned DSP features and confidence signals.",
         ],
-    }
+    )
 
 
-@router.post("/api/v1/analyze")
+@router.post("/api/v1/analyze", response_model=AnalysisResponse)
 async def analyze(
     request: Request,
     audio: Annotated[UploadFile, File(description="PCM WAV probe recording.")],
     metadata: Annotated[str, Form(description="JSON-encoded ProbeMetadata.")] = "{}",
-):
+) -> AnalysisResponse:
     settings = get_settings()
     _reject_large_content_length(request, settings.max_upload_bytes)
     parsed_metadata = _parse_metadata(metadata)
@@ -122,7 +129,7 @@ def _reject_large_content_length(request: Request, max_upload_bytes: int) -> Non
     if content_length > max_upload_bytes + MULTIPART_OVERHEAD_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Request body exceeds the Phase 1 upload limit.",
+            detail="Request body exceeds the upload limit.",
         )
 
 

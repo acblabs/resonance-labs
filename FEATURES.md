@@ -1,6 +1,6 @@
 # Features
 
-ResonanceLab is an active acoustic sensing project for learning how everyday objects respond to sound. The first release is intentionally narrow: prove a reliable browser chirp capture and API analysis loop before making measurement claims.
+ResonanceLab is an active acoustic sensing project for learning how everyday objects respond to sound. The early releases are intentionally narrow: prove a reliable browser chirp capture, add deterministic DSP features, and avoid measurement claims until calibration data exists.
 
 ## Current Phase 1 Features
 
@@ -14,9 +14,8 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - WAV upload to FastAPI with JSON probe metadata.
 - FastAPI health endpoint.
 - Server-provided default probe configuration and upload limits.
-- Dummy analysis endpoint that validates upload size, content type, WAV structure, duration, sample rate, RMS, peak amplitude, and mean amplitude.
-- Placeholder alignment metadata that clearly marks matched-filter DSP as a future phase.
-- Browser result display with duration, sample rate, RMS, peak amplitude, upload size, capture path, and warnings.
+- Analysis endpoint that validates upload size, content type, WAV structure, duration, sample rate, RMS, peak amplitude, and DC offset.
+- Browser result display with duration, sample rate, alignment confidence, SNR, peak frequency, RT60 proxy, upload size, capture path, and warnings.
 - Canvas waveform display for captured probe audio.
 - Docker Compose development stack for web and API.
 - Cloud Build configuration for GCP checks and container image builds.
@@ -31,17 +30,33 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - Vectorized NumPy WAV decoding for Phase 1 PCM uploads.
 - Slimmer web runtime container with production-only Node dependencies.
 
+## Current Phase 2 Features
+
+- Matched-filter chirp alignment against the configured logarithmic sweep.
+- Alignment confidence, detected chirp start, expected chirp start, and estimated latency reporting.
+- FFT-domain bandpass filtering with cosine transition bands.
+- FFT spectral trace with centroid, bandwidth, rolloff, and spectral floor summaries.
+- Compact STFT grid for browser spectrogram rendering.
+- Compact mel-spectrogram grid computed without adding Librosa or PyTorch.
+- Regularized transfer-response magnitude by configured frequency bands.
+- Dominant ring-down peak detection with prominence and Q-factor proxies.
+- RMS-envelope log-linear decay fitting with RT60 proxy output.
+- Signal-to-noise reporting against the pre-roll noise floor.
+- Browser tabs for waveform, FFT, STFT, and mel-spectrogram views.
+- Deterministic golden DSP tests covering alignment, bandpass behavior, peak detection, spectrogram shapes, post-window fallback timing, and decay-fit edge cases.
+- Committed recorded-style WAV fixture with channel coloration, attenuation, direct-path bleed, echoes, hum/noise, soft clipping, and ring-down.
+- Cross-language golden chirp fixture that guards browser and Python chirp parity.
+- Deterministic fixture generator script for the Phase 2 synthetic fixtures.
+
 ## Planned DSP Features
 
-- Matched-filter chirp alignment.
 - Direct-path and room-response caveat reporting.
-- Bandpass filtering with validated frequency ranges.
-- FFT and STFT feature extraction.
-- Transfer-response features.
-- Dominant resonance peak detection.
-- Decay and damping estimates from post-chirp response.
-- Signal-to-noise and alignment confidence scores.
-- Golden audio fixtures with tolerance-based feature tests.
+- Free-air reference handling for speaker-to-microphone and room response.
+- Empty-glass reference subtraction and comparison features.
+- Repeated chirps and synchronous averaging.
+- MFCC summary statistics.
+- Real recorded WAV fixtures from multiple devices, rooms, and sessions, tracked in `docs/real_recording_fixtures.md`.
+- Side-by-side chirp and tap feature comparison.
 
 ## Planned Calibration Features
 

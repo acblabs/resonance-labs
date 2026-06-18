@@ -1,6 +1,6 @@
 # ResonanceLab
 
-ResonanceLab is an open-source, sound-only active acoustic sensing platform. The Phase 1 milestone proves the browser-to-API loop: a browser emits a short chirp, records microphone PCM, uploads a WAV file to FastAPI, and displays returned signal sanity metrics.
+ResonanceLab is an open-source, sound-only active acoustic sensing platform. Phase 1 proved the browser-to-API loop; Phase 2 adds a NumPy DSP MVP that aligns the recorded chirp and returns FFT, STFT, mel-spectrogram, transfer-response, peak, and decay features.
 
 ## Phase 1 Status
 
@@ -17,11 +17,22 @@ Implemented:
 - Cloud Build configuration for GCP-based checks and container builds.
 - Local Git hook checks for README, CHANGELOG, FEATURES, and project SKILL.md freshness.
 
+Phase 2 DSP MVP now implemented:
+
+- Matched-filter logarithmic chirp alignment.
+- FFT-domain bandpass filtering around the configured probe range.
+- FFT spectral descriptors and dominant ring-down peak detection.
+- STFT and mel-spectrogram feature grids for browser visualization.
+- Regularized transfer-response band features.
+- RMS-envelope decay and RT60 proxy estimates.
+- Golden deterministic DSP tests and a committed recorded-style WAV fixture under the existing Python test runner.
+- Browser UI tabs for waveform, FFT, STFT, and mel-spectrogram views.
+
 Still manual:
 
 - Real-device mobile testing on Android Chrome and iOS Safari.
 - HTTPS test setup for mobile microphone permissions outside localhost.
-- Phase 2 matched-filter alignment and DSP features.
+- Calibration profiles and fill-level estimates.
 
 ## Quickstart
 
@@ -46,7 +57,7 @@ In another shell, start the web app:
 npm.cmd --workspace @resonancelab/web run dev
 ```
 
-Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. Do not use headphones or earbuds for active probing.
+Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. Do not use headphones or earbuds for active probing. The signal panel can switch between waveform, FFT, STFT, and mel-spectrogram views after the API returns.
 
 ## Docker Compose
 
@@ -72,7 +83,7 @@ See `FEATURES.md` for the current and planned feature list.
 - `audio`: PCM WAV file.
 - `metadata`: JSON encoded probe metadata.
 
-The Phase 1 response confirms upload/decode health. It is not a fill-level prediction.
+The response includes upload/decode health, matched-filter alignment metadata, and Phase 2 DSP features. It is not a fill-level prediction.
 
 ## Repository Layout
 

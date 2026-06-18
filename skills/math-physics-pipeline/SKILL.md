@@ -104,3 +104,4 @@ For each probe, extract and report:
 ### 4.3 Validation and Golden Tests
 *   **Data Leakage Prevention**: Split training/eval datasets strictly by recording session, device, and individual object. Do not use random sample-level splitting.
 *   **Golden Test Float Tolerances**: Ensure tests comparing DSP output fixtures utilize float assertions with specific tolerances (e.g., `pytest.approx(expected, rel=1e-5)`) to accommodate minor platform-specific floating-point arithmetic differences.
+*   **Current Phase 2 Baseline**: The implemented ResonanceLab DSP MVP is NumPy-first and lives in `packages/resonancelab/dsp/analysis.py`. Preserve the existing golden tests for matched-filter alignment, FFT-domain bandpass attenuation, spectrogram dimensions, dominant peak detection, post-window fallback timing, decay-fit edge cases, and the committed recorded-style WAV fixture when extending this pipeline.

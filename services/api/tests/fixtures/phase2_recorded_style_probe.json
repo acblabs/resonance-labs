@@ -1,0 +1,28 @@
+{
+  "name": "phase2_recorded_style_probe",
+  "description": "Committed PCM WAV fixture with attenuated/colored chirp, direct-path bleed, room-style echoes, hum/noise, soft clipping, and post-chirp ring-down. This is a deterministic recorded-style fixture; replace or supplement it with real device recordings as soon as measurement data is available.",
+  "wav_file": "phase2_recorded_style_probe.wav",
+  "sample_rate_hz": 48000,
+  "probe_config": {
+    "start_hz": 500.0,
+    "end_hz": 10000.0,
+    "duration_seconds": 0.5,
+    "amplitude": 0.35,
+    "fade_seconds": 0.01,
+    "pre_roll_seconds": 0.25,
+    "post_roll_seconds": 0.9
+  },
+  "expected": {
+    "latency_ms": 8.04,
+    "latency_tolerance_ms": 1.0,
+    "min_alignment_confidence": 0.8,
+    "max_alignment_confidence": 0.98,
+    "min_signal_to_noise_db": 20.0,
+    "primary_peak_hz": 1640.0,
+    "primary_peak_tolerance_hz": 20.0,
+    "secondary_peak_hz": 2925.0,
+    "secondary_peak_tolerance_hz": 35.0,
+    "min_decay_rate_per_second": 3.5,
+    "max_decay_rate_per_second": 6.5
+  }
+}

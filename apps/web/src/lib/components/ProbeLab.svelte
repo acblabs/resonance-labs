@@ -4,7 +4,11 @@
   import { FALLBACK_PROBE_CONFIG, PROBE_LIMITS, clampProbeConfig } from '$lib/audio/chirp';
   import { captureProbe } from '$lib/audio/recorder';
   import type { AnalysisResponse, ProbeConfig } from '$lib/audio/types';
+  import SpectrogramCanvas from './SpectrogramCanvas.svelte';
+  import SpectrumCanvas from './SpectrumCanvas.svelte';
   import WaveformCanvas from './WaveformCanvas.svelte';
+
+  type SignalView = 'waveform' | 'fft' | 'stft' | 'mel';
 
   let config: ProbeConfig = { ...FALLBACK_PROBE_CONFIG };
   let loadingConfig = true;
@@ -14,6 +18,7 @@
   let result: AnalysisResponse | null = null;
   let samples: Float32Array | null = null;
   let sampleRateHz = 0;
+  let signalView: SignalView = 'waveform';
   type NumericProbeConfigKey = Exclude<keyof ProbeConfig, 'signal_type'>;
 
   onMount(async () => {
@@ -60,6 +65,33 @@
 
   $: expectedSeconds =
     (config.pre_roll_ms + config.duration_ms + config.post_roll_ms) / 1000;
+  $: topPeak = result?.dsp.dominant_peaks[0] ?? null;
+  $: activeSpectrogram =
+    signalView === 'mel' ? result?.dsp.mel_spectrogram ?? null : result?.dsp.stft ?? null;
+
+  function formatHz(value: number | null | undefined): string {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return '--';
+    }
+    if (value >= 1000) {
+      return `${(value / 1000).toFixed(value >= 10000 ? 1 : 2)} kHz`;
+    }
+    return `${Math.round(value)} Hz`;
+  }
+
+  function formatDb(value: number | null | undefined): string {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return '--';
+    }
+    return `${value.toFixed(1)} dB`;
+  }
+
+  function formatSeconds(value: number | null | undefined): string {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return '--';
+    }
+    return `${value.toFixed(3)} s`;
+  }
 </script>
 
 <main class="main">
@@ -67,7 +99,7 @@
     <div class="panel">
       <div class="panel-header">
         <h1 class="panel-title">Active Probe</h1>
-        <p class="panel-subtitle">Desktop Chrome gate: chirp capture, WAV upload, dummy analysis.</p>
+        <p class="panel-subtitle">Chirp capture, WAV upload, alignment, and Phase 2 DSP analysis.</p>
       </div>
 
       <div class="controls">
@@ -170,12 +202,60 @@
     <div class="panel">
       <div class="panel-header">
         <h2 class="panel-title">Signal</h2>
-        <p class="panel-subtitle">Captured PCM waveform and API sanity metrics.</p>
+        <p class="panel-subtitle">Captured PCM waveform and API-derived frequency views.</p>
       </div>
 
       <div class="signal-area">
-        <div class="waveform-shell">
-          <WaveformCanvas {samples} {sampleRateHz} />
+        <div class="view-tabs" role="tablist" aria-label="Signal view">
+          <button
+            type="button"
+            role="tab"
+            class:active-tab={signalView === 'waveform'}
+            aria-selected={signalView === 'waveform'}
+            on:click={() => (signalView = 'waveform')}
+          >
+            Waveform
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class:active-tab={signalView === 'fft'}
+            aria-selected={signalView === 'fft'}
+            on:click={() => (signalView = 'fft')}
+          >
+            FFT
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class:active-tab={signalView === 'stft'}
+            aria-selected={signalView === 'stft'}
+            on:click={() => (signalView = 'stft')}
+          >
+            STFT
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class:active-tab={signalView === 'mel'}
+            aria-selected={signalView === 'mel'}
+            on:click={() => (signalView = 'mel')}
+          >
+            Mel
+          </button>
+        </div>
+
+        <div class="plot-shell">
+          {#if signalView === 'waveform'}
+            <WaveformCanvas {samples} {sampleRateHz} />
+          {:else if signalView === 'fft'}
+            <SpectrumCanvas
+              series={result?.dsp.fft.series ?? null}
+              peaks={result?.dsp.dominant_peaks ?? []}
+            />
+          {:else}
+            <SpectrogramCanvas grid={activeSpectrogram} />
+          {/if}
         </div>
 
         <div class="metric-grid">
@@ -188,12 +268,20 @@
             <strong>{result ? `${result.audio.sample_rate_hz} Hz` : '--'}</strong>
           </div>
           <div class="metric">
-            <span>RMS</span>
-            <strong>{result ? result.audio.rms.toFixed(5) : '--'}</strong>
+            <span>Alignment</span>
+            <strong>{result ? `${(result.alignment.confidence ?? 0).toFixed(3)}` : '--'}</strong>
           </div>
           <div class="metric">
-            <span>Peak</span>
-            <strong>{result ? result.audio.peak_amplitude.toFixed(5) : '--'}</strong>
+            <span>SNR</span>
+            <strong>{result ? formatDb(result.dsp.signal_to_noise_db) : '--'}</strong>
+          </div>
+          <div class="metric">
+            <span>Peak Hz</span>
+            <strong>{topPeak ? formatHz(topPeak.frequency_hz) : '--'}</strong>
+          </div>
+          <div class="metric">
+            <span>RT60</span>
+            <strong>{result ? formatSeconds(result.dsp.decay.rt60_seconds) : '--'}</strong>
           </div>
         </div>
 
@@ -213,9 +301,32 @@
             </div>
             <div class="result-row">
               <dt>Alignment</dt>
-              <dd>{result.alignment.method}</dd>
+              <dd>{formatSeconds(result.alignment.detected_start_seconds)}</dd>
+            </div>
+            <div class="result-row">
+              <dt>Bandpass</dt>
+              <dd>{formatHz(result.dsp.bandpass_low_hz)} - {formatHz(result.dsp.bandpass_high_hz)}</dd>
+            </div>
+            <div class="result-row">
+              <dt>Centroid</dt>
+              <dd>{formatHz(result.dsp.fft.centroid_hz)}</dd>
+            </div>
+            <div class="result-row">
+              <dt>Rolloff</dt>
+              <dd>{formatHz(result.dsp.fft.rolloff_hz)}</dd>
             </div>
           </dl>
+
+          {#if result.dsp.transfer_response.length}
+            <div class="transfer-list" aria-label="Transfer response bands">
+              {#each result.dsp.transfer_response as band}
+                <div class="transfer-row">
+                  <span>{formatHz(band.start_hz)}-{formatHz(band.end_hz)}</span>
+                  <strong>{formatDb(band.mean_db)}</strong>
+                </div>
+              {/each}
+            </div>
+          {/if}
         {/if}
 
         {#if result?.warnings.length}

@@ -204,7 +204,7 @@ function createScriptProcessorRecorder(audioContext: AudioContext, stream: Media
 async function playChirp(audioContext: AudioContext, config: ProbeConfig, startTime: number): Promise<void> {
   const chirp = generateLogChirp(config, audioContext.sampleRate);
   const buffer = audioContext.createBuffer(1, chirp.length, audioContext.sampleRate);
-  buffer.copyToChannel(chirp as Float32Array<ArrayBuffer>, 0);
+  buffer.getChannelData(0).set(chirp);
 
   const source = audioContext.createBufferSource();
   source.buffer = buffer;

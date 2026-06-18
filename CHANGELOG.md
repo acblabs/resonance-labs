@@ -6,6 +6,13 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Added
 
+- Phase 2 NumPy DSP pipeline with matched-filter chirp alignment, FFT-domain bandpass filtering, FFT/STFT/mel outputs, transfer-response bands, dominant peak detection, and decay estimates.
+- Browser waveform, FFT, STFT, and mel-spectrogram signal views.
+- Deterministic golden DSP tests for alignment, bandpass attenuation, spectrogram shape, peak detection, post-window fallback timing, and decay-fit edge cases.
+- Committed recorded-style WAV fixture for chirp analysis tests.
+- Tracked real-recording WAV fixture TODO with metadata and acceptance criteria.
+- Cross-language chirp fixture and tests to keep browser and Python chirp generation aligned.
+- Deterministic script for regenerating Phase 2 synthetic fixtures.
 - Phase 1 browser chirp capture and WAV upload scaffold.
 - FastAPI dummy analysis endpoint with basic WAV metrics.
 - Docker Compose development stack.
@@ -18,6 +25,10 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Changed
 
+- Analyze responses now return Phase 2 DSP features and matched-filter alignment metadata instead of placeholder alignment.
+- Analyze and models endpoints now expose typed FastAPI response schemas.
+- FFT summary output now names `spectral_floor_db` instead of `noise_floor_db`.
+- Browser chirp fade generation now matches the Python DSP reference endpoint sampling.
 - Project license changed to MIT.
 - Pre-commit freshness policy now requires `FEATURES.md` in every commit.
 - API dummy metrics now report `dc_offset` instead of misleading signed mean amplitude.

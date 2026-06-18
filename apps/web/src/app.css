@@ -235,7 +235,38 @@ button {
   padding: 1rem;
 }
 
-.waveform-shell {
+.view-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  padding: 0.3rem;
+}
+
+.view-tabs button {
+  min-height: 2.25rem;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.view-tabs button:hover,
+.view-tabs button:focus-visible {
+  color: var(--text);
+  outline: none;
+  background: var(--surface-3);
+}
+
+.view-tabs button.active-tab {
+  color: #06120d;
+  background: var(--accent);
+  font-weight: 760;
+}
+
+.plot-shell {
   min-height: 280px;
   border-radius: 8px;
   overflow: hidden;
@@ -245,7 +276,7 @@ button {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.75rem;
 }
 
@@ -300,12 +331,43 @@ button {
   color: var(--muted);
 }
 
+.transfer-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.transfer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-height: 2.4rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  padding: 0.55rem 0.65rem;
+}
+
+.transfer-row span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.transfer-row strong {
+  font-size: 0.9rem;
+}
+
 @media (max-width: 860px) {
   .hero-row {
     grid-template-columns: 1fr;
   }
 
   .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .transfer-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -321,6 +383,11 @@ button {
   }
 
   .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .view-tabs,
+  .transfer-list {
     grid-template-columns: 1fr;
   }
 
