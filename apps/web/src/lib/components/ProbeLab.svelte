@@ -4,6 +4,8 @@
   import { FALLBACK_PROBE_CONFIG, PROBE_LIMITS, clampProbeConfig } from '$lib/audio/chirp';
   import { captureProbe } from '$lib/audio/recorder';
   import type { AnalysisResponse, ProbeConfig } from '$lib/audio/types';
+  import type { CalibrationEstimate, CalibrationProfile } from '$lib/calibration/types';
+  import CalibrationManager from './CalibrationManager.svelte';
   import SpectrogramCanvas from './SpectrogramCanvas.svelte';
   import SpectrumCanvas from './SpectrumCanvas.svelte';
   import WaveformCanvas from './WaveformCanvas.svelte';
@@ -19,9 +21,17 @@
   let samples: Float32Array | null = null;
   let sampleRateHz = 0;
   let signalView: SignalView = 'waveform';
+  let selectedProfile: CalibrationProfile | null = null;
+  let calibrationEstimate: CalibrationEstimate | null = null;
+  let selectedAnchorCount = 0;
+  let selectedObservationCount = 0;
   type NumericProbeConfigKey = Exclude<keyof ProbeConfig, 'signal_type'>;
 
   onMount(async () => {
+    await loadConfig();
+  });
+
+  async function loadConfig(): Promise<void> {
     try {
       const envelope = await loadProbeConfig();
       config = clampProbeConfig(envelope.default);
@@ -31,7 +41,7 @@
     } finally {
       loadingConfig = false;
     }
-  });
+  }
 
   async function runProbe(): Promise<void> {
     running = true;
@@ -91,6 +101,35 @@
       return '--';
     }
     return `${value.toFixed(3)} s`;
+  }
+
+  function formatPercent(value: number | null | undefined): string {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return '--';
+    }
+    return `${value.toFixed(0)}%`;
+  }
+
+  function formatConfidence(estimateValue: CalibrationEstimate | null): string {
+    if (!estimateValue || estimateValue.status !== 'ready') {
+      return '--';
+    }
+    return `${estimateValue.confidenceLabel} ${(estimateValue.confidence * 100).toFixed(0)}%`;
+  }
+
+  function formatRepeatCount(count: number | null | undefined): string {
+    if (!count) {
+      return 'n=0';
+    }
+    return `n=${count}`;
+  }
+
+  function formatStability(estimateValue: CalibrationEstimate | null): string {
+    const value = estimateValue?.profileStability.featureStdMax;
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return '--';
+    }
+    return value.toFixed(2);
   }
 </script>
 
@@ -196,6 +235,14 @@
         {#if error}
           <div class="error" role="alert">{error}</div>
         {/if}
+
+        <CalibrationManager
+          {result}
+          bind:selectedProfile
+          bind:calibrationEstimate
+          bind:selectedAnchorCount
+          bind:selectedObservationCount
+        />
       </div>
     </div>
 
@@ -283,6 +330,22 @@
             <span>RT60</span>
             <strong>{result ? formatSeconds(result.dsp.decay.rt60_seconds) : '--'}</strong>
           </div>
+          <div class="metric">
+            <span>Fill estimate</span>
+            <strong>{calibrationEstimate ? formatPercent(calibrationEstimate.fillPercent) : '--'}</strong>
+          </div>
+          <div class="metric">
+            <span>Confidence</span>
+            <strong>
+              {calibrationEstimate?.status === 'ready'
+                ? formatConfidence(calibrationEstimate)
+                : `${selectedAnchorCount}/3 anchors`}
+            </strong>
+          </div>
+          <div class="metric">
+            <span>Anchor stability</span>
+            <strong>{formatStability(calibrationEstimate)}</strong>
+          </div>
         </div>
 
         {#if result}
@@ -315,6 +378,26 @@
               <dt>Rolloff</dt>
               <dd>{formatHz(result.dsp.fft.rolloff_hz)}</dd>
             </div>
+            <div class="result-row">
+              <dt>Profile</dt>
+              <dd>{selectedProfile?.name ?? '--'}</dd>
+            </div>
+            <div class="result-row">
+              <dt>Nearest anchor</dt>
+              <dd>{calibrationEstimate?.nearestAnchor?.label ?? '--'}</dd>
+            </div>
+            <div class="result-row">
+              <dt>Free-air ref</dt>
+              <dd>
+                {selectedProfile?.freeAirReference
+                  ? formatRepeatCount(selectedProfile.freeAirReference.sampleCount)
+                  : '--'}
+              </dd>
+            </div>
+            <div class="result-row">
+              <dt>Profile samples</dt>
+              <dd>{selectedObservationCount}</dd>
+            </div>
           </dl>
 
           {#if result.dsp.transfer_response.length}
@@ -332,6 +415,14 @@
         {#if result?.warnings.length}
           <ul class="notice-list" aria-label="Analysis warnings">
             {#each result.warnings as warning}
+              <li>{warning}</li>
+            {/each}
+          </ul>
+        {/if}
+
+        {#if calibrationEstimate?.warnings.length}
+          <ul class="notice-list" aria-label="Calibration warnings">
+            {#each calibrationEstimate.warnings as warning}
               <li>{warning}</li>
             {/each}
           </ul>

@@ -12,8 +12,10 @@ from resonancelab.dsp import (
     analyze_chirp_response,
     apply_fft_bandpass,
     estimate_decay,
+    find_dominant_peaks,
     generate_log_chirp,
 )
+from resonancelab.dsp.analysis import _estimate_q_factor
 
 FIXTURES_DIR = Path(__file__).with_name("fixtures")
 FIXTURE_PATH = FIXTURES_DIR / "phase2_golden_probe.json"
@@ -166,6 +168,17 @@ class Phase2DspGoldenTests(unittest.TestCase):
         self.assertGreater(_tone_amplitude(filtered, 500.0), 0.60)
         self.assertLess(_tone_amplitude(filtered, 6000.0), 0.04)
 
+    def test_bandpass_zero_padding_reduces_end_to_start_wraparound(self) -> None:
+        samples = np.zeros(4096, dtype=np.float64)
+        samples[-1] = 1.0
+
+        filtered = apply_fft_bandpass(samples, SAMPLE_RATE_HZ, 700.0, 1400.0, transition_hz=80.0)
+
+        self.assertLess(
+            float(np.max(np.abs(filtered[:128]))),
+            0.02 * float(np.max(np.abs(filtered))),
+        )
+
     def test_spectrogram_shapes_are_stable(self) -> None:
         analysis = analyze_chirp_response(
             golden_probe_samples(),
@@ -213,6 +226,29 @@ class Phase2DspGoldenTests(unittest.TestCase):
             places=6,
         )
 
+    def test_snr_noise_window_excludes_early_detected_chirp(self) -> None:
+        reference = generate_log_chirp(GOLDEN_CHIRP, SAMPLE_RATE_HZ)
+        expected_start = int(round(PRE_ROLL_SECONDS * SAMPLE_RATE_HZ))
+        detected_start = expected_start - int(round(0.05 * SAMPLE_RATE_HZ))
+        samples = np.random.default_rng(117).normal(
+            loc=0.0,
+            scale=0.00015,
+            size=expected_start + reference.size + int(round(0.4 * SAMPLE_RATE_HZ)),
+        )
+        samples[detected_start : detected_start + reference.size] += reference
+
+        analysis = analyze_chirp_response(
+            samples,
+            SAMPLE_RATE_HZ,
+            GOLDEN_CHIRP,
+            pre_roll_seconds=PRE_ROLL_SECONDS,
+            post_roll_seconds=POST_ROLL_SECONDS,
+        )
+
+        self.assertGreater(analysis.alignment.confidence, 0.9)
+        self.assertIsNotNone(analysis.signal_to_noise_db)
+        self.assertGreater(analysis.signal_to_noise_db or 0.0, 35.0)
+
     def test_flat_envelope_does_not_emit_rt60(self) -> None:
         time = np.arange(int(0.4 * SAMPLE_RATE_HZ), dtype=np.float64) / SAMPLE_RATE_HZ
         flat = 0.04 * np.sin(2.0 * math.pi * 1200.0 * time)
@@ -221,6 +257,52 @@ class Phase2DspGoldenTests(unittest.TestCase):
 
         self.assertIsNone(decay.decay_rate_per_second)
         self.assertIsNone(decay.rt60_seconds)
+        self.assertIsNone(decay.fit_r2)
+
+    def test_analytic_damped_sinusoid_recovers_peak_and_decay_rate(self) -> None:
+        frequency_hz = 1375.0
+        decay_rate = 4.5
+        time = np.arange(int(0.9 * SAMPLE_RATE_HZ), dtype=np.float64) / SAMPLE_RATE_HZ
+        samples = 0.32 * np.exp(-decay_rate * time) * np.sin(2.0 * math.pi * frequency_hz * time)
+
+        peaks = find_dominant_peaks(
+            samples,
+            SAMPLE_RATE_HZ,
+            min_hz=500.0,
+            max_hz=2500.0,
+            max_peaks=1,
+            min_prominence_db=3.0,
+        )
+        decay = estimate_decay(samples, SAMPLE_RATE_HZ, window_start_seconds=0.0)
+
+        self.assertGreaterEqual(len(peaks), 1)
+        self.assertAlmostEqual(peaks[0].frequency_hz, frequency_hz, delta=8.0)
+        self.assertIsNotNone(decay.decay_rate_per_second)
+        self.assertAlmostEqual(decay.decay_rate_per_second or 0.0, decay_rate, delta=0.55)
+
+    def test_q_factor_interpolates_half_power_crossings(self) -> None:
+        frequencies = np.arange(990.0, 1011.0, 1.0)
+        peak_index = int(np.where(frequencies == 1000.0)[0][0])
+        peak = 1.0
+        half_power = peak / math.sqrt(2.0)
+        magnitude = np.zeros_like(frequencies)
+
+        for index, frequency_hz in enumerate(frequencies):
+            distance = abs(frequency_hz - 1000.0)
+            if distance <= 3.0:
+                magnitude[index] = peak - (peak - half_power) * (distance / 3.4)
+            else:
+                magnitude[index] = max(0.05, half_power - 0.08 * (distance - 3.4))
+
+        q_factor = _estimate_q_factor(frequencies, magnitude, peak_index)
+        right_crossing = frequencies[peak_index + 3] + (
+            (half_power - magnitude[peak_index + 3])
+            / (magnitude[peak_index + 4] - magnitude[peak_index + 3])
+        )
+        expected_bandwidth = 2.0 * (right_crossing - frequencies[peak_index])
+
+        self.assertIsNotNone(q_factor)
+        self.assertAlmostEqual(q_factor or 0.0, 1000.0 / expected_bandwidth, delta=0.5)
 
 
 def _tone_amplitude(samples: np.ndarray, frequency_hz: float) -> float:

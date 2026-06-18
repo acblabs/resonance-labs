@@ -1,6 +1,6 @@
 # ResonanceLab
 
-ResonanceLab is an open-source, sound-only active acoustic sensing platform. Phase 1 proved the browser-to-API loop; Phase 2 adds a NumPy DSP MVP that aligns the recorded chirp and returns FFT, STFT, mel-spectrogram, transfer-response, peak, and decay features.
+ResonanceLab is an open-source, sound-only active acoustic sensing platform. Phase 1 proved the browser-to-API loop, Phase 2 added a NumPy DSP MVP, and Phase 3 adds a calibration-first browser demo with local fill-level estimates from empty, 50%, and full anchors.
 
 ## Phase 1 Status
 
@@ -17,7 +17,7 @@ Implemented:
 - Cloud Build configuration for GCP-based checks and container builds.
 - Local Git hook checks for README, CHANGELOG, FEATURES, and project SKILL.md freshness.
 
-Phase 2 DSP MVP now implemented:
+Phase 2 DSP MVP implemented:
 
 - Matched-filter logarithmic chirp alignment.
 - FFT-domain bandpass filtering around the configured probe range.
@@ -27,12 +27,28 @@ Phase 2 DSP MVP now implemented:
 - RMS-envelope decay and RT60 proxy estimates.
 - Golden deterministic DSP tests and a committed recorded-style WAV fixture under the existing Python test runner.
 - Browser UI tabs for waveform, FFT, STFT, and mel-spectrogram views.
+- Dominant peak Q-factor estimates now interpolate sub-bin `-3 dB` bandwidth crossings.
+- SNR windows exclude early detected chirps, FFT bandpass filtering zero-pads before cropping, and invalid non-decay fits suppress fit quality.
+
+Phase 3 calibration demo implemented:
+
+- Browser-local IndexedDB calibration profile storage.
+- Empty, 50%, full, and free-air reference save workflow.
+- Repeated anchor aggregation with local stability estimates.
+- Local profile list with create, rename, delete, export, and import actions.
+- Feature-vector extraction from Phase 2 DSP output.
+- Piecewise feature-distance interpolation between calibration anchors.
+- Profile-relative fill estimate, heuristic confidence label, nearest-anchor reference, and warnings.
+- Weighted geometric confidence aggregation with explicit caps for hard quality and compatibility failures.
+- Probe/capture compatibility checks for sample rate, browser family, capture path, audio processing, and probe settings.
+- Calibration workflow split into a dedicated Svelte component to keep the probe screen maintainable.
+- Calibration math unit tests for incomplete profiles, interpolation, baseline beating, canonical capture signatures, and low-quality probes.
 
 Still manual:
 
 - Real-device mobile testing on Android Chrome and iOS Safari.
 - HTTPS test setup for mobile microphone permissions outside localhost.
-- Calibration profiles and fill-level estimates.
+- Real-device calibrated validation across sessions, vessels, rooms, and browsers.
 
 ## Quickstart
 
@@ -57,7 +73,7 @@ In another shell, start the web app:
 npm.cmd --workspace @resonancelab/web run dev
 ```
 
-Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. Do not use headphones or earbuds for active probing. The signal panel can switch between waveform, FFT, STFT, and mel-spectrogram views after the API returns.
+Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. Do not use headphones or earbuds for active probing. The signal panel can switch between waveform, FFT, STFT, and mel-spectrogram views after the API returns. To use Phase 3 calibration, save current probe results into the Empty, 50%, and Full anchor slots for a local profile, ideally with repeated captures and a free-air reference. Subsequent probes show a profile-relative fill estimate in the browser.
 
 ## Docker Compose
 
@@ -83,7 +99,7 @@ See `FEATURES.md` for the current and planned feature list.
 - `audio`: PCM WAV file.
 - `metadata`: JSON encoded probe metadata.
 
-The response includes upload/decode health, matched-filter alignment metadata, and Phase 2 DSP features. It is not a fill-level prediction.
+The response includes upload/decode health, matched-filter alignment metadata, and Phase 2 DSP features. Fill estimates are computed in the browser against local Phase 3 calibration profiles; no local profile IDs or profile anchors are sent to the API.
 
 ## Repository Layout
 
@@ -92,6 +108,7 @@ apps/web/               SvelteKit probe UI
 services/api/           FastAPI service
 packages/resonancelab/  Shared Python audio and DSP helpers
 docs/                   Measurement and browser notes
+docs/calibration.md     Phase 3 local calibration notes
 scripts/                Local development helpers
 skills/                 Project-specific Codex skill guidance
 .githooks/              Local commit hooks

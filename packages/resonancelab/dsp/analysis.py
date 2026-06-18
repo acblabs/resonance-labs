@@ -184,8 +184,16 @@ def apply_fft_bandpass(
         transition = max(25.0, min(500.0, (high_hz - low_hz) * 0.08))
     transition = max(0.0, float(transition))
 
-    spectrum = np.fft.rfft(array)
-    frequencies = np.fft.rfftfreq(array.size, d=1.0 / sample_rate_hz)
+    transient_samples = int(math.ceil(4.0 * sample_rate_hz / max(transition, 1.0)))
+    pad_samples = min(
+        max(array.size // 2, transient_samples, 1),
+        max(array.size, int(round(sample_rate_hz * 0.5))),
+    )
+    padded = np.pad(array, (pad_samples, pad_samples))
+    fft_size = _next_power_of_two(padded.size)
+
+    spectrum = np.fft.rfft(padded, n=fft_size)
+    frequencies = np.fft.rfftfreq(fft_size, d=1.0 / sample_rate_hz)
     mask = np.zeros_like(frequencies)
 
     passband = (frequencies >= low_hz) & (frequencies <= high_hz)
@@ -203,7 +211,8 @@ def apply_fft_bandpass(
             math.pi * (frequencies[upper] - high_hz) / transition
         )
 
-    return np.fft.irfft(spectrum * mask, n=array.size).astype(np.float64, copy=False)
+    filtered = np.fft.irfft(spectrum * mask, n=fft_size)
+    return filtered[pad_samples : pad_samples + array.size].astype(np.float64, copy=False)
 
 
 def analyze_chirp_response(
@@ -258,7 +267,7 @@ def analyze_chirp_response(
         filtered,
         signal_start=chirp_start,
         signal_end=chirp_end,
-        noise_end=expected_start_sample,
+        noise_end=min(expected_start_sample, chirp_start),
     )
     spectrum_window = post_window if post_window.size >= 64 else chirp_window
     fft = compute_spectral_summary(
@@ -701,6 +710,7 @@ def estimate_decay(
     if slope >= 0:
         decay_rate = None
         rt60 = None
+        fit_r2 = None
     else:
         decay_rate = float(-slope)
         rt60 = float(math.log(1000.0) / decay_rate) if decay_rate > EPSILON else None
@@ -915,6 +925,10 @@ def _compact_indices(size: int, max_points: int) -> npt.NDArray[np.int_]:
     return np.unique(np.linspace(0, size - 1, max_points).round().astype(int))
 
 
+def _next_power_of_two(size: int) -> int:
+    return 1 << (max(1, int(size)) - 1).bit_length()
+
+
 def _quadratic_peak_frequency(
     frequencies: npt.NDArray[np.float64],
     values_db: npt.NDArray[np.float64],
@@ -954,10 +968,54 @@ def _estimate_q_factor(
     while right < magnitude_linear.size - 1 and magnitude_linear[right] > half_power:
         right += 1
 
-    bandwidth = frequencies[right] - frequencies[left]
+    if left == 0 or right == magnitude_linear.size - 1:
+        return None
+
+    left_frequency = _interpolated_threshold_frequency(
+        frequencies,
+        magnitude_linear,
+        left,
+        left + 1,
+        half_power,
+    )
+    right_frequency = _interpolated_threshold_frequency(
+        frequencies,
+        magnitude_linear,
+        right - 1,
+        right,
+        half_power,
+    )
+    if left_frequency is None or right_frequency is None:
+        return None
+
+    peak_frequency = _quadratic_peak_frequency(
+        frequencies,
+        20.0 * np.log10(np.maximum(magnitude_linear, EPSILON)),
+        peak_index,
+    )
+    bandwidth = right_frequency - left_frequency
     if bandwidth <= EPSILON:
         return None
-    return float(frequencies[peak_index] / bandwidth)
+    return float(peak_frequency / bandwidth)
+
+
+def _interpolated_threshold_frequency(
+    frequencies: npt.NDArray[np.float64],
+    values: npt.NDArray[np.float64],
+    low_index: int,
+    high_index: int,
+    threshold: float,
+) -> float | None:
+    low_value = values[low_index]
+    high_value = values[high_index]
+    denominator = high_value - low_value
+    if abs(denominator) <= EPSILON:
+        return None
+
+    fraction = float(np.clip((threshold - low_value) / denominator, 0.0, 1.0))
+    return float(
+        frequencies[low_index] + fraction * (frequencies[high_index] - frequencies[low_index])
+    )
 
 
 def _rms_envelope(

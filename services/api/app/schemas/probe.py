@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class HealthResponse(BaseModel):
@@ -17,7 +17,7 @@ class HealthResponse(BaseModel):
 
 class ModelsResponse(BaseModel):
     active_model: None
-    phase: Literal["phase_2_dsp_mvp"]
+    phase: Literal["phase_3_calibration_demo"]
     notes: list[str]
 
 
@@ -61,17 +61,9 @@ class BrowserCaptureMetadata(BaseModel):
 class ProbeMetadata(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    profile_id: str | None = None
     client_recorded_at: str | None = None
     probe_config: ProbeConfig = Field(default_factory=ProbeConfig)
     browser: BrowserCaptureMetadata = Field(default_factory=BrowserCaptureMetadata)
-
-    @field_validator("profile_id")
-    @classmethod
-    def blank_profile_is_none(cls, value: str | None) -> str | None:
-        if value is not None and not value.strip():
-            return None
-        return value
 
 
 class ProbeConfigEnvelope(BaseModel):

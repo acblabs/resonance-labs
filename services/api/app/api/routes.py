@@ -58,7 +58,8 @@ async def probe_config() -> ProbeConfigEnvelope:
         },
         warnings=[
             "Do not run active probes through headphones or earbuds.",
-            "Phase 2 DSP metrics are experimental and are not fill-level predictions.",
+            "The API returns DSP features; Phase 3 fill estimates require local "
+            "browser calibration.",
         ],
     )
 
@@ -67,10 +68,11 @@ async def probe_config() -> ProbeConfigEnvelope:
 async def models() -> ModelsResponse:
     return ModelsResponse(
         active_model=None,
-        phase="phase_2_dsp_mvp",
+        phase="phase_3_calibration_demo",
         notes=[
             "No ML model is loaded.",
             "The analyze endpoint returns chirp-aligned DSP features and confidence signals.",
+            "Profile-relative fill estimates run in the browser against local IndexedDB anchors.",
         ],
     )
 

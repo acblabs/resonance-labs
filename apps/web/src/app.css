@@ -169,7 +169,8 @@ button {
   min-height: 2.5rem;
 }
 
-.field input:focus {
+.field input:focus,
+.profile-row select:focus {
   border-color: var(--accent-2);
   outline: 2px solid rgba(88, 185, 209, 0.18);
 }
@@ -204,6 +205,50 @@ button {
   color: #b9c7c1;
 }
 
+.secondary-button,
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondary-button {
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.secondary-button:hover,
+.secondary-button:focus-visible {
+  background: var(--surface-3);
+  outline: none;
+}
+
+.danger-button {
+  color: #ffd0cc;
+  background: rgba(255, 125, 112, 0.12);
+  border: 1px solid rgba(255, 125, 112, 0.34);
+}
+
+.danger-button:hover,
+.danger-button:focus-visible {
+  background: rgba(255, 125, 112, 0.2);
+  outline: none;
+}
+
+.secondary-button:disabled,
+.danger-button:disabled {
+  cursor: not-allowed;
+  color: #82918b;
+  border-color: #32423d;
+  background: #1b2421;
+}
+
 .status-line {
   color: var(--muted);
   font-size: 0.92rem;
@@ -227,6 +272,120 @@ button {
   border: 1px solid rgba(255, 125, 112, 0.4);
   color: #ffd0cc;
   background: rgba(255, 125, 112, 0.12);
+}
+
+.calibration-block {
+  display: grid;
+  gap: 0.8rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.section-heading h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0;
+}
+
+.section-heading span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.profile-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, auto);
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.profile-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.hidden-input {
+  display: none;
+}
+
+.storage-line {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-left: auto;
+}
+
+.profile-row select {
+  width: 100%;
+  min-height: 2.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface-2);
+  padding: 0.55rem 0.6rem;
+}
+
+.anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.anchor-button {
+  display: grid;
+  gap: 0.15rem;
+  min-height: 4rem;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  background: var(--surface-2);
+  padding: 0.6rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.anchor-button:hover,
+.anchor-button:focus-visible {
+  background: var(--surface-3);
+  outline: none;
+}
+
+.anchor-button:disabled {
+  cursor: not-allowed;
+  color: #82918b;
+  background: #1b2421;
+}
+
+.anchor-button.anchor-saved {
+  border-color: rgba(73, 209, 149, 0.52);
+  background: rgba(73, 209, 149, 0.1);
+}
+
+.anchor-button span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.anchor-button strong {
+  font-size: 0.98rem;
+}
+
+.anchor-button em {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-style: normal;
+}
+
+.reference-button {
+  border-style: dashed;
 }
 
 .signal-area {
@@ -387,12 +546,31 @@ button {
   }
 
   .view-tabs,
-  .transfer-list {
+  .transfer-list,
+  .anchor-grid {
     grid-template-columns: 1fr;
   }
 
   .actions,
   .primary-button {
     width: 100%;
+  }
+
+  .profile-row {
+    grid-template-columns: 1fr;
+  }
+
+  .secondary-button,
+  .danger-button {
+    width: 100%;
+  }
+
+  .profile-tools {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .storage-line {
+    margin-left: 0;
   }
 }

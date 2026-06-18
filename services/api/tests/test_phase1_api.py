@@ -99,7 +99,7 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertIsNone(payload["active_model"])
-        self.assertEqual(payload["phase"], "phase_2_dsp_mvp")
+        self.assertEqual(payload["phase"], "phase_3_calibration_demo")
 
     def test_openapi_documents_analyze_response_model(self) -> None:
         response = self.client.get("/openapi.json")

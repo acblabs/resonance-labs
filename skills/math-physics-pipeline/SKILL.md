@@ -52,6 +52,7 @@ For project context, repository layout details, and phase gates, refer to the [i
 ### 2.2 Spectral Estimation & Sub-Bin Peak Detection
 *   **Downsampling Policy**: Keep the native capture sample rate (typically 44.1 kHz or 48.0 kHz) to preserve high-frequency resonance details. Do not downsample unless explicitly validated and authorized.
 *   **Windowing**: Apply a Hann or Hamming window to the post-chirp or tap impulse segments to minimize spectral leakage before computing the Fast Fourier Transform (FFT).
+*   **FFT-domain filtering**: When applying frequency masks to finite captures, zero-pad before masking and crop back to the original interval. Treat unpadded FFT masks as circular convolution and therefore unsafe near capture boundaries.
 *   **Sub-bin Peak Interpolation**: To estimate peak frequencies with precision exceeding the FFT bin width $\Delta f$, perform quadratic interpolation on the log-magnitude spectrum $|Y(f)|$:
     $$\delta = \frac{1}{2} \frac{\alpha - \gamma}{\alpha - 2\beta + \gamma}$$
     where $\beta$ is the log-magnitude of the peak bin, and $\alpha, \gamma$ are the log-magnitudes of the adjacent bins. The interpolated frequency is $f_{\text{peak}} = (k_{\text{peak}} + \delta) \Delta f$.
@@ -60,6 +61,7 @@ For project context, repository layout details, and phase gates, refer to the [i
 *   **Q-Factor**: Calculate the Quality Factor $Q$ of isolated resonance peaks to capture damping properties:
     $$Q = \frac{f_0}{\Delta f_{3\text{dB}}}$$
     where $\Delta f_{3\text{dB}}$ is the bandwidth at which the power drops to half of the peak value.
+    The current implementation interpolates the left and right half-power crossings between FFT bins before computing the bandwidth; do not regress to integer-bin bandwidths.
 *   **Envelope Fitting**: Fit an exponential decay curve to the rectified Hilbert transform envelope of the post-excitation signal:
     $$A(t) = A_0 e^{-\alpha t}$$
     where $\alpha$ is the damping coefficient.
@@ -79,6 +81,7 @@ Instead, treat bleed cancellation as an experimental task exploring:
 ### 3.2 Anchor-Based Calibration
 *   **Anchor Interpolation**: Relative fill level is computed by mapping extracted peak shifts and energy values between three local anchor states: `Empty`, `50%`, and `Full`.
 *   **Algorithm**: Use piecewise linear interpolation or Euclidean distance in the multi-dimensional feature space of the calibration anchors to produce the relative fill estimation.
+*   **Phase 3 Implementation**: Browser-local calibration lives in `apps/web/src/lib/calibration/`. It extracts weighted feature vectors from Phase 2 DSP output, stores repeated anchor vectors in IndexedDB, aggregates repeats into mean feature vectors with stability statistics, and estimates fill by projecting a new vector onto the nearest calibrated polyline segment (`Empty -> 50% -> Full`). Log-Hz frequency summaries must be aggregated geometrically to match the feature space. Confidence uses a weighted geometric mean for soft quality factors and explicit caps for hard failures. It must be reduced for low SNR, weak alignment, sample-rate/capture mismatches, probe-setting mismatches, missing free-air reference, missing anchors, unstable repeats, non-monotonic peak behavior, or anchors that are too close in feature space. Calibration profile IDs and anchor vectors stay browser-local and must not be uploaded with probe analysis requests.
 
 ---
 
@@ -96,7 +99,7 @@ For each probe, extract and report:
 
 ### 4.2 Fail Gates & Uncertainty Handling
 **IMPORTANT:** The pipeline must report high uncertainty or raise warning errors rather than outputting a forced fill estimate if any of the following conditions are met:
-1.  **Low SNR**: Peak signal level is less than 12 dB above the pre-roll noise floor.
+1.  **Low SNR**: Peak signal level is less than 12 dB above the pre-roll noise floor. The noise window must end before both the expected chirp start and the selected detected chirp start so early-arriving chirps cannot contaminate the noise estimate.
 2.  **Weak Alignment**: Cross-correlation alignment coefficient is below a defined threshold (indicates distorted or missing chirp).
 3.  **Bypassed Constraints**: Device properties show that AGC, echo cancellation, or noise suppression were forced active by the OS.
 4.  **Signal Mismatch**: Disagreement between chirp and tap frequency peaks during mixed calibration testing.
@@ -105,3 +108,4 @@ For each probe, extract and report:
 *   **Data Leakage Prevention**: Split training/eval datasets strictly by recording session, device, and individual object. Do not use random sample-level splitting.
 *   **Golden Test Float Tolerances**: Ensure tests comparing DSP output fixtures utilize float assertions with specific tolerances (e.g., `pytest.approx(expected, rel=1e-5)`) to accommodate minor platform-specific floating-point arithmetic differences.
 *   **Current Phase 2 Baseline**: The implemented ResonanceLab DSP MVP is NumPy-first and lives in `packages/resonancelab/dsp/analysis.py`. Preserve the existing golden tests for matched-filter alignment, FFT-domain bandpass attenuation, spectrogram dimensions, dominant peak detection, post-window fallback timing, decay-fit edge cases, and the committed recorded-style WAV fixture when extending this pipeline.
+*   **Analytic Checks**: Maintain at least one closed-form damped-sinusoid regression test for peak frequency and exponential decay-rate recovery, independent of synthetic chirp fixture generation.

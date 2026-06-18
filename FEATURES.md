@@ -34,19 +34,38 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 
 - Matched-filter chirp alignment against the configured logarithmic sweep.
 - Alignment confidence, detected chirp start, expected chirp start, and estimated latency reporting.
-- FFT-domain bandpass filtering with cosine transition bands.
+- FFT-domain bandpass filtering with cosine transition bands, zero-padding, and cropped output to reduce boundary wraparound.
 - FFT spectral trace with centroid, bandwidth, rolloff, and spectral floor summaries.
 - Compact STFT grid for browser spectrogram rendering.
 - Compact mel-spectrogram grid computed without adding Librosa or PyTorch.
 - Regularized transfer-response magnitude by configured frequency bands.
 - Dominant ring-down peak detection with prominence and Q-factor proxies.
-- RMS-envelope log-linear decay fitting with RT60 proxy output.
-- Signal-to-noise reporting against the pre-roll noise floor.
+- Sub-bin interpolation for Q-factor `-3 dB` bandwidth crossings.
+- RMS-envelope log-linear decay fitting with RT60 proxy output and null fit quality for non-decaying fits.
+- Signal-to-noise reporting against the pre-roll noise floor, clamped to exclude early detected chirp energy.
 - Browser tabs for waveform, FFT, STFT, and mel-spectrogram views.
-- Deterministic golden DSP tests covering alignment, bandpass behavior, peak detection, spectrogram shapes, post-window fallback timing, and decay-fit edge cases.
+- Deterministic golden DSP tests covering alignment, bandpass behavior, analytic damped sinusoids, peak detection, spectrogram shapes, post-window fallback timing, SNR windowing, and decay-fit edge cases.
 - Committed recorded-style WAV fixture with channel coloration, attenuation, direct-path bleed, echoes, hum/noise, soft clipping, and ring-down.
 - Cross-language golden chirp fixture that guards browser and Python chirp parity.
 - Deterministic fixture generator script for the Phase 2 synthetic fixtures.
+
+## Current Phase 3 Features
+
+- Browser-local IndexedDB calibration profile storage.
+- Automatic local profile creation for account-free use.
+- Local profile list with create, rename, delete, export, import, and active-profile selection.
+- Empty, 50%, full, and free-air reference capture/save workflow.
+- Repeated anchor aggregation with mean feature vectors and stability statistics.
+- Anchor records storing extracted DSP feature vectors, probe settings, capture signatures, quality signals, and warnings.
+- Canonical capture signatures for sample rate, capture path, browser family, and reported audio processing.
+- Feature-distance interpolation over the empty-to-50% and 50%-to-full calibration segments.
+- Profile-relative fill estimate with confidence label, nearest-anchor reference, and global-mean/nearest-anchor baselines.
+- Weighted geometric confidence aggregation with hard caps for weak alignment, probe mismatch, capture mismatch, free-air dominance, too few comparable features, and close anchor spacing.
+- Calibration uncertainty penalties for missing anchors, low SNR, weak chirp alignment, mismatched probe settings, sample-rate/capture mismatch, missing free-air reference, unstable repeats, and close anchor spacing.
+- Browser UI display of fill estimate, confidence, nearest anchor, anchor count, repeat count, storage usage, and calibration warnings.
+- Unit tests for calibration feature extraction, incomplete profiles, interpolation behavior, baseline beating, repeat aggregation, capture mismatch, free-air references, import/export, and low-quality probe confidence.
+- Dedicated calibration manager component separated from the main probe/visualization component.
+- Probe uploads keep calibration profile IDs and anchor vectors local to the browser.
 
 ## Planned DSP Features
 
@@ -60,13 +79,11 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 
 ## Planned Calibration Features
 
-- Local IndexedDB calibration profiles.
-- Empty, 50%, and full anchor capture workflow.
-- Local feature storage by default.
+- Repeated-anchor averaging with within-profile variance estimates.
+- Free-air and empty-vessel reference comparison views.
 - Optional local raw-audio storage only with user opt-in.
-- Profile-relative fill estimate.
-- Calibration confidence and nearest-anchor reporting.
-- Local profile deletion and cleanup.
+- Tap and chirp side-by-side calibration profiles.
+- Cross-session calibration drift reporting.
 
 ## Planned ML Features
 
