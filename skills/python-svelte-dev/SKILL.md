@@ -13,7 +13,7 @@ metadata:
 
 This skill governs the development of the frontend and backend architectures of the **ResonanceLab** platform, emphasizing high-performance, robust client-side audio capture, and a premium lab-style interface.
 
-For project context, repository layout details, and phase gates, refer to the [implementaion_plan.md](file:///c:/Users/pcaccount/.gemini/antigravity-ide/scratch/resonance-labs/implementaion_plan.md).
+For project context, repository layout details, and phase gates, refer to the [implementation_plan.md](file:///c:/Users/pcaccount/.gemini/antigravity-ide/scratch/resonance-labs/implementation_plan.md).
 
 ---
 
@@ -79,6 +79,7 @@ For project context, repository layout details, and phase gates, refer to the [i
 *   **Model Caching**: Load machine learning models (e.g., XGBoost, scikit-learn) once at startup and cache them in process memory. Never reload models on a per-request basis.
 *   **DSP Optimization**: Optimize DSP functions utilizing vectorized NumPy/SciPy operations. Minimize the import footprint of heavy libraries like Librosa or PyTorch in the primary API container to control cold-start latency.
 *   **Audio Decoding**: Rely on fast binary decoding (such as `soundfile` or `scipy.io.wavfile`). Support lossy fallback formats via standard subprocess decoding only if ffmpeg is available.
+*   **Phase 4 ML Boundary**: Keep scikit-learn training and artifact export in offline package/script paths (`packages/resonancelab/ml`, `scripts/train_baseline.py`, `scripts/run_phase4_benchmark.py`). Do not load a Phase 4 model in the API until compiled benchmark reports and a model card justify serving. Treat checked-in manifests as public-safe schema examples unless they contain enough groups and feature paths to train.
 
 ---
 
@@ -96,4 +97,5 @@ For project context, repository layout details, and phase gates, refer to the [i
 | **Dependency Management** | Use venv + `requirements.txt` / `requirements-dev.txt` in the root. | Running global `pip install` or introducing unapproved managers. |
 | **Audio Capture** | AudioWorklet PCM -> browser-side WAV encoding. | MediaRecorder WebM/Opus by default (lossy). |
 | **ML Inference** | Ephemeral processing with scikit-learn/XGBoost baselines. | Heavy deep learning models in Phase 1 API images. |
+| **Phase 4 Training** | Use `requirements-ml.txt`, private manifests, leakage-aware group splits, and generated model cards. | Committing private raw audio or evaluating with random probe-level splits. |
 | **UI Aesthetics** | Clean lab-style layout, canvas rendering, dark visualization mode. | Raw unstyled inputs, static image placeholders, Tailwind defaults. |

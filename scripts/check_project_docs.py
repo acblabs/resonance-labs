@@ -25,6 +25,7 @@ IMPLEMENTATION_FILES = {
     "cloudbuild.yaml",
     "requirements.txt",
     "requirements-dev.txt",
+    "pyproject.toml",
     "package.json",
     "package-lock.json",
 }
@@ -140,7 +141,7 @@ def check_skills() -> list[str]:
 
         if "ResonanceLab" not in text:
             errors.append(f"{relative} should mention ResonanceLab project context.")
-        if "implementaion_plan.md" not in text and "implementation_plan.md" not in text:
+        if "implementation_plan.md" not in text:
             errors.append(f"{relative} should reference the implementation plan.")
 
     return errors

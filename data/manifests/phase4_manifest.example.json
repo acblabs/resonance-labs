@@ -1,0 +1,88 @@
+{
+  "created_at": "2026-06-19T00:00:00Z",
+  "dataset_id": "resonancelab-phase4-private-example",
+  "description": "Schema example only. Placeholder paths are private and this file is too small to train.",
+  "format": "resonancelab.phase4.dataset",
+  "format_version": 1,
+  "label_schema": {
+    "buckets_percent": [0, 25, 50, 75, 100]
+  },
+  "notes": "Documentation-only manifest. Do not run training against this file or commit private raw recordings/derived features without explicit approval.",
+  "owners": ["local-lab"],
+  "records": [
+    {
+      "analysis_path": "../private/analysis/session-001/glass-a-empty-001.analysis.json",
+      "context": {
+        "browser_id": "chrome-android-125",
+        "device_id": "pixel-private-a",
+        "glass_id": "glass-a",
+        "material": "soda-lime-glass",
+        "room_id": "kitchen-table-a",
+        "session_id": "session-001",
+        "volume_setting": "system-60"
+      },
+      "id": "session-001-glass-a-empty-001",
+      "label": {
+        "fill_bucket": "empty",
+        "fill_mass_g": 0,
+        "fill_percent": 0,
+        "vessel_empty_mass_g": 214.2,
+        "vessel_full_mass_g": 514.6
+      },
+      "probe": {
+        "amplitude": 0.35,
+        "duration_ms": 500,
+        "end_hz": 10000,
+        "fade_ms": 10,
+        "post_roll_ms": 1000,
+        "pre_roll_ms": 250,
+        "signal_type": "log_chirp",
+        "start_hz": 500
+      },
+      "quality": {
+        "alignment_confidence": 0.94,
+        "signal_to_noise_db": 31.0,
+        "usable": true,
+        "warnings": []
+      },
+      "recorded_at": "2026-06-19T14:00:00Z"
+    },
+    {
+      "analysis_path": "../private/analysis/session-001/glass-a-full-001.analysis.json",
+      "context": {
+        "browser_id": "chrome-android-125",
+        "device_id": "pixel-private-a",
+        "glass_id": "glass-a",
+        "material": "soda-lime-glass",
+        "room_id": "kitchen-table-a",
+        "session_id": "session-001",
+        "volume_setting": "system-60"
+      },
+      "id": "session-001-glass-a-full-001",
+      "label": {
+        "fill_bucket": "full",
+        "fill_mass_g": 300.4,
+        "fill_percent": 100,
+        "vessel_empty_mass_g": 214.2,
+        "vessel_full_mass_g": 514.6
+      },
+      "probe": {
+        "amplitude": 0.35,
+        "duration_ms": 500,
+        "end_hz": 10000,
+        "fade_ms": 10,
+        "post_roll_ms": 1000,
+        "pre_roll_ms": 250,
+        "signal_type": "log_chirp",
+        "start_hz": 500
+      },
+      "quality": {
+        "alignment_confidence": 0.92,
+        "signal_to_noise_db": 29.4,
+        "usable": true,
+        "warnings": []
+      },
+      "recorded_at": "2026-06-19T14:07:00Z"
+    }
+  ]
+}

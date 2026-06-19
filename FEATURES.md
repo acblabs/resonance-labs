@@ -67,6 +67,27 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - Dedicated calibration manager component separated from the main probe/visualization component.
 - Probe uploads keep calibration profile IDs and anchor vectors local to the browser.
 
+## Current Phase 4 Features
+
+- Private dataset manifest format for chirp recordings with required session, glass, device, browser, room, label, probe, and quality metadata.
+- Public JSON Schema for Phase 4 dataset manifests.
+- Glass recording protocol with mass-based fill labeling, repeated captures, free-air references, and quality rejection rules.
+- Canonical Python feature extraction from saved API analysis JSON or raw PCM WAV records.
+- Stable tabular ML feature names for resonance peaks, spectral summaries, decay estimates, transfer-response bands, and fixed 20-band mel-spectrogram summaries.
+- Raw STFT-bin features excluded from Phase 4 model inputs to avoid sample-rate/window-dependent dimensionality.
+- Leakage-aware group holdout splitting by session, glass, device, browser, or combined context fields, with repeated group-holdout helper support.
+- Offline scikit-learn baseline trainer with repeated grouped holdout evaluation, fill-percent regression, and fill-bucket classification heads using sparse linear or random-forest model families.
+- Manifest-defined fill buckets threaded through classification, references, confusion matrices, and within-one-bucket metrics.
+- Quality gates for missing/weak chirp alignment and missing/low SNR before model fitting.
+- Quality audit metrics for retained, skipped, missing-quality, weak-alignment, and low-SNR records.
+- Train-set feature filtering for all-missing and constant columns before imputation/model fitting.
+- Missingness indicators added during imputation so absent feature families remain visible to models.
+- Reference metrics for global mean, global median, nearest canonical bucket, and train-mode bucket classification baselines.
+- Baseline artifact export with `joblib`, metrics JSON, feature schema, feature importance, and generated model card.
+- Compiled benchmark reports across session, glass, device, and browser holdout regimes.
+- Phase 4 evaluation notebook skeleton that delegates to the checked-in training script.
+- Public-safe data, benchmark, and model-card landing zones without committing private audio.
+
 ## Planned DSP Features
 
 - Direct-path and room-response caveat reporting.
@@ -87,11 +108,9 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 
 ## Planned ML Features
 
-- Classical baseline models using extracted DSP features.
-- Fill bucket classification for empty, 25%, 50%, 75%, and full.
-- Fill percentage regression.
-- Session-, glass-, device-, and browser-aware evaluation splits.
-- Model cards and benchmark reports.
+- Initial private chirp dataset across multiple devices, browsers, sessions, rooms, and glasses.
+- Cross-session, cross-glass, cross-device, and cross-browser benchmark reports from private captures.
+- Optional XGBoost challenger after scikit-learn references are established.
 - Small neural audio models only after the baseline and dataset justify them.
 
 ## Planned Lab Assistant Features

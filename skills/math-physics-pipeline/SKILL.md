@@ -13,7 +13,7 @@ metadata:
 
 This skill governs the mathematical, physical, and DSP implementations of the **ResonanceLab** acoustic pipeline. It outlines how physical interactions (sweeps, taps, chirps) map to digital features and calibration profiles.
 
-For project context, repository layout details, and phase gates, refer to the [implementaion_plan.md](file:///c:/Users/pcaccount/.gemini/antigravity-ide/scratch/resonance-labs/implementaion_plan.md).
+For project context, repository layout details, and phase gates, refer to the [implementation_plan.md](file:///c:/Users/pcaccount/.gemini/antigravity-ide/scratch/resonance-labs/implementation_plan.md).
 
 ---
 
@@ -106,6 +106,7 @@ For each probe, extract and report:
 
 ### 4.3 Validation and Golden Tests
 *   **Data Leakage Prevention**: Split training/eval datasets strictly by recording session, device, and individual object. Do not use random sample-level splitting.
+*   **Phase 4 Baseline Discipline**: The first ML baseline is scikit-learn over extracted DSP features. Use fixed mel summaries rather than raw STFT-bin model features, keep `decay.fit_r2` as a diagnostic rather than a learned feature, honor manifest-defined fill buckets, evaluate with the compiled holdout regimes (`session_id`, `glass_id`, `device_id`, `browser_id`), and compare against global mean, global median, nearest canonical bucket, and train-mode bucket references before considering XGBoost or neural models.
 *   **Golden Test Float Tolerances**: Ensure tests comparing DSP output fixtures utilize float assertions with specific tolerances (e.g., `pytest.approx(expected, rel=1e-5)`) to accommodate minor platform-specific floating-point arithmetic differences.
 *   **Current Phase 2 Baseline**: The implemented ResonanceLab DSP MVP is NumPy-first and lives in `packages/resonancelab/dsp/analysis.py`. Preserve the existing golden tests for matched-filter alignment, FFT-domain bandpass attenuation, spectrogram dimensions, dominant peak detection, post-window fallback timing, decay-fit edge cases, and the committed recorded-style WAV fixture when extending this pipeline.
 *   **Analytic Checks**: Maintain at least one closed-form damped-sinusoid regression test for peak frequency and exponential decay-rate recovery, independent of synthetic chirp fixture generation.

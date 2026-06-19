@@ -1,6 +1,6 @@
 # ResonanceLab
 
-ResonanceLab is an open-source, sound-only active acoustic sensing platform. Phase 1 proved the browser-to-API loop, Phase 2 added a NumPy DSP MVP, and Phase 3 adds a calibration-first browser demo with local fill-level estimates from empty, 50%, and full anchors.
+ResonanceLab is an open-source, sound-only active acoustic sensing platform. Phase 1 proved the browser-to-API loop, Phase 2 added a NumPy DSP MVP, Phase 3 added a calibration-first browser demo with local fill-level estimates from empty, 50%, and full anchors, and Phase 4 adds the offline dataset and scikit-learn baseline training path.
 
 ## Phase 1 Status
 
@@ -44,11 +44,22 @@ Phase 3 calibration demo implemented:
 - Calibration workflow split into a dedicated Svelte component to keep the probe screen maintainable.
 - Calibration math unit tests for incomplete profiles, interpolation, baseline beating, canonical capture signatures, and low-quality probes.
 
+Phase 4 dataset and baseline tooling implemented:
+
+- Private dataset manifest format for fill-level recordings with session, glass, device, browser, room, and quality metadata.
+- Canonical DSP-to-tabular feature extraction for saved API analysis JSON or raw WAV records, using fixed mel summaries and excluding raw STFT-bin model inputs.
+- Leakage-aware group holdout splits for session, glass, device, and browser evaluation, backed by scikit-learn grouped splitting when ML dependencies are installed.
+- Offline scikit-learn baseline trainer for fill-percent regression and fill-bucket classification.
+- Baseline artifact export with `joblib`, feature schema, dropped-feature audit, quality audit, metrics JSON, and generated model card.
+- Compiled Phase 4 benchmark command for session, glass, device, and browser holdout regimes.
+- Recording protocol, manifest JSON Schema, baseline workflow docs, benchmark result area, and evaluation notebook skeleton.
+
 Still manual:
 
 - Real-device mobile testing on Android Chrome and iOS Safari.
 - HTTPS test setup for mobile microphone permissions outside localhost.
 - Real-device calibrated validation across sessions, vessels, rooms, and browsers.
+- Collection of the initial private Phase 4 dataset.
 
 ## Quickstart
 
@@ -57,6 +68,12 @@ Use Python 3.11+ and Node 22+.
 ```powershell
 python -m pip install -r requirements-dev.txt
 npm.cmd install
+```
+
+For ML-only environments that do not need frontend tooling, install:
+
+```powershell
+python -m pip install -r requirements-ml.txt
 ```
 
 Copy `.env.example` when you want a local environment file. `PUBLIC_API_URL` is read at runtime by the SvelteKit node server; local dev falls back to `http://localhost:8000`, but deployed environments must set it explicitly.
@@ -74,6 +91,18 @@ npm.cmd --workspace @resonancelab/web run dev
 ```
 
 Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. Do not use headphones or earbuds for active probing. The signal panel can switch between waveform, FFT, STFT, and mel-spectrogram views after the API returns. To use Phase 3 calibration, save current probe results into the Empty, 50%, and Full anchor slots for a local profile, ideally with repeated captures and a free-air reference. Subsequent probes show a profile-relative fill estimate in the browser.
+
+## Phase 4 Baseline
+
+Phase 4 training is offline. Keep private raw audio and feature files out of git unless explicitly approved. The checked-in example manifest documents schema shape only and is not large enough to train.
+
+```powershell
+python scripts/extract_phase4_features.py --manifest path/to/private_manifest.json --output-dir path/to/private_features
+python scripts/train_baseline.py --manifest path/to/private_manifest.json --group-by session_id --output-dir models/baseline_sklearn
+python scripts/run_phase4_benchmark.py --manifest path/to/private_manifest.json --output-dir experiments/results/phase4_benchmark
+```
+
+The trainer runs repeated grouped holdouts by default and exports the first split's model. Use `--group-by glass_id`, `--group-by device_id`, and `--group-by browser_id` for separate generalization reports. See `docs/glass_recording_protocol.md`, `docs/phase4_baseline.md`, and `docs/schemas/phase4_dataset_manifest.schema.json`.
 
 ## Docker Compose
 
@@ -109,6 +138,10 @@ services/api/           FastAPI service
 packages/resonancelab/  Shared Python audio and DSP helpers
 docs/                   Measurement and browser notes
 docs/calibration.md     Phase 3 local calibration notes
+data/                   Public-safe dataset manifest examples
+experiments/results/    Benchmark report landing zone
+models/                 Model-card and artifact landing zone
+notebooks/              Phase 4 evaluation notebook skeleton
 scripts/                Local development helpers
 skills/                 Project-specific Codex skill guidance
 .githooks/              Local commit hooks

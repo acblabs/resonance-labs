@@ -6,6 +6,19 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Added
 
+- Phase 4 dataset manifest parser with required leakage-aware session, glass, device, browser, room, label, probe, and quality metadata.
+- Canonical Phase 4 feature extraction from API analysis JSON and raw WAV records, with fixed mel summaries and no raw STFT-bin model inputs.
+- Leakage-aware group holdout splitter for session, glass, device, and browser evaluation, plus repeated holdout helper support.
+- Offline scikit-learn baseline trainer with repeated grouped holdout evaluation, regression/classification heads, reference metrics, quality gates, feature importance, and artifact export.
+- Train-set feature filtering for all-missing and constant columns before baseline fitting.
+- Manifest bucket schemas now drive Phase 4 class labels, references, confusion matrices, and within-one-bucket scoring.
+- Missing alignment/SNR quality is rejected by default and counted in exported quality audits.
+- Missingness indicators are included during baseline imputation.
+- Compiled Phase 4 benchmark report command for session, glass, device, and browser regimes.
+- Raw-audio Phase 4 feature extraction now requires exact probe metadata instead of falling back to guessed chirp settings.
+- Phase 4 training and feature-extraction scripts.
+- Phase 4 recording protocol, baseline workflow, dataset manifest JSON Schema, example manifest, model-card template, benchmark result landing zone, and evaluation notebook skeleton.
+- Phase 4 unit coverage for feature extraction, manifest validation, split leakage prevention, and synthetic baseline training.
 - Phase 3 browser-local calibration profiles backed by IndexedDB.
 - Empty, 50%, full, and free-air reference save workflow in the probe UI.
 - Repeated anchor aggregation with profile stability and capture-compatibility confidence penalties.
