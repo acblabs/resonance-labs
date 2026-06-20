@@ -87,16 +87,12 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 ## Planned DSP Features
 
 - Better direct-path and room-response caveat reporting.
-- Repeated chirps and synchronous averaging.
 - MFCC summary statistics.
 - Real recorded report fixtures from multiple devices, rooms, and sessions, tracked in `docs/real_recording_fixtures.md`.
-- Side-by-side chirp and tap feature comparison for future acoustic experiments.
 - More explicit impulse-response and deconvolved-response visualization.
 
 ## Planned Room Fingerprint Features
 
-- Room-to-room comparison using repeated measurements from fixed device positions.
-- Position-to-position comparison within one room to show how the acoustic fingerprint changes.
 - Low-frequency mode grouping and warning labels for unstable or unresolved peaks.
 - Decay-band visualization for low, mid, and high frequency ranges.
 - Side-by-side comparison of exported JSON reports.
