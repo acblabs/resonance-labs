@@ -13,9 +13,10 @@ EPSILON = 1e-12
 # Use the same boundary for selecting detected alignment and warning users. Below this,
 # trust the scheduled chirp start over a weak matched-filter maximum.
 ALIGNMENT_ACCEPT_CONFIDENCE = 0.20
-ALIGNMENT_WARN_CONFIDENCE = 0.20
+ALIGNMENT_WARN_CONFIDENCE = ALIGNMENT_ACCEPT_CONFIDENCE
 SNR_WARN_DB = 12.0
 MIN_POST_WINDOW_SECONDS = 0.10
+TRANSFER_RESPONSE_REGULARIZATION = 1e-4
 DEFAULT_TRANSFER_BANDS_HZ = (
     (100.0, 250.0),
     (250.0, 500.0),
@@ -140,6 +141,8 @@ def generate_log_chirp(spec: ChirpSpec, sample_rate_hz: int) -> npt.NDArray[np.f
         raise ValueError("sample_rate_hz must be positive.")
     if spec.start_hz <= 0 or spec.end_hz <= spec.start_hz:
         raise ValueError("chirp frequencies must satisfy 0 < start_hz < end_hz.")
+    if spec.end_hz >= sample_rate_hz / 2.0:
+        raise ValueError("chirp end_hz must be lower than the Nyquist frequency.")
     if spec.duration_seconds <= 0:
         raise ValueError("duration_seconds must be positive.")
 
@@ -276,8 +279,13 @@ def analyze_chirp_response(
         min_hz=max(20.0, chirp.start_hz * 0.5),
         max_hz=min(nyquist_hz, max(chirp.end_hz * 1.35, chirp.start_hz + 100.0)),
     )
+    response_window = _slice_with_padding(
+        filtered,
+        chirp_start,
+        max(reference.size, post_end - chirp_start),
+    )
     transfer_response = compute_transfer_response(
-        chirp_window,
+        response_window,
         reference,
         sample_rate_hz,
         min_hz=chirp.start_hz,
@@ -535,17 +543,23 @@ def compute_mel_spectrogram(
 
 
 def compute_transfer_response(
-    captured_chirp: npt.ArrayLike,
+    captured_response: npt.ArrayLike,
     reference_chirp: npt.ArrayLike,
     sample_rate_hz: int,
     *,
     min_hz: float,
     max_hz: float,
     bands_hz: tuple[tuple[float, float], ...] = DEFAULT_TRANSFER_BANDS_HZ,
+    regularization: float = TRANSFER_RESPONSE_REGULARIZATION,
 ) -> list[TransferBand]:
-    """Estimate regularized transfer-response magnitude by frequency band."""
+    """Estimate a regularized driven-path transfer response by frequency band.
 
-    captured = _as_mono_float64(captured_chirp)
+    The estimate uses the chirp and the captured response window, including post-chirp
+    ring-down when available. It is still a same-setup acoustic path feature, not an
+    isolated vessel transfer function.
+    """
+
+    captured = _as_mono_float64(captured_response)
     reference = _as_mono_float64(reference_chirp)
     if captured.size == 0 or reference.size == 0:
         return []
@@ -560,9 +574,14 @@ def compute_transfer_response(
     captured_spectrum = np.fft.rfft((captured - np.mean(captured)) * window)
     reference_spectrum = np.fft.rfft((reference - np.mean(reference)) * window)
     frequencies = np.fft.rfftfreq(size, d=1.0 / sample_rate_hz)
-    response_db = 20.0 * np.log10(
-        (np.abs(captured_spectrum) + EPSILON) / (np.abs(reference_spectrum) + EPSILON)
+    reference_power = np.square(np.abs(reference_spectrum))
+    regularizer = max(0.0, regularization) * max(float(np.max(reference_power)), EPSILON)
+    response = (
+        captured_spectrum
+        * np.conj(reference_spectrum)
+        / (reference_power + regularizer + EPSILON)
     )
+    response_db = 20.0 * np.log10(np.abs(response) + EPSILON)
 
     nyquist_hz = sample_rate_hz / 2.0
     constrained_max = min(max_hz, nyquist_hz)
@@ -630,7 +649,12 @@ def find_dominant_peaks(
     peaks: list[PeakFeature] = []
     for index in selected:
         peak_frequency = _quadratic_peak_frequency(frequencies, magnitude_db, index)
-        q_factor = _estimate_q_factor(frequencies, magnitude_linear, index)
+        q_factor = _estimate_q_factor(
+            frequencies,
+            magnitude_linear,
+            index,
+            peak_frequency_hz=peak_frequency,
+        )
         peaks.append(
             PeakFeature(
                 frequency_hz=peak_frequency,
@@ -682,12 +706,9 @@ def estimate_decay(
     peak_index = int(np.argmax(envelope))
     fit_times = times[peak_index:]
     fit_envelope = envelope[peak_index:]
-    floor = max(
-        float(np.percentile(envelope, 20.0)) * 1.5,
-        float(np.max(envelope)) * 0.015,
-        EPSILON,
-    )
-    fit_mask = fit_envelope > floor
+    noise_floor = max(float(np.percentile(envelope, 15.0)), EPSILON)
+    fit_floor = max(noise_floor * 1.5, float(np.max(envelope)) * 0.015, EPSILON)
+    fit_mask = fit_envelope > fit_floor
     if int(np.sum(fit_mask)) < 4:
         return DecayEstimate(
             method="rms_envelope_log_linear",
@@ -699,12 +720,22 @@ def estimate_decay(
         )
 
     x = fit_times[fit_mask]
-    y = np.log(np.maximum(fit_envelope[fit_mask], EPSILON))
+    signal_above_floor = np.sqrt(
+        np.maximum(np.square(fit_envelope[fit_mask]) - noise_floor**2, EPSILON)
+    )
+    y = np.log(signal_above_floor)
     design = np.column_stack([x, np.ones_like(x)])
-    slope, intercept = np.linalg.lstsq(design, y, rcond=None)[0]
+    weights = np.square(signal_above_floor)
+    normalized_weights = weights / max(float(np.max(weights)), EPSILON)
+    weighted_design = design * np.sqrt(normalized_weights)[:, np.newaxis]
+    weighted_y = y * np.sqrt(normalized_weights)
+    slope, intercept = np.linalg.lstsq(weighted_design, weighted_y, rcond=None)[0]
     predicted = slope * x + intercept
-    residual_sum = float(np.sum((y - predicted) ** 2))
-    total_sum = float(np.sum((y - np.mean(y)) ** 2))
+    residual_sum = float(np.sum(normalized_weights * np.square(y - predicted)))
+    weighted_mean = float(
+        np.sum(normalized_weights * y) / max(float(np.sum(normalized_weights)), EPSILON)
+    )
+    total_sum = float(np.sum(normalized_weights * np.square(y - weighted_mean)))
     fit_r2 = 1.0 - residual_sum / total_sum if total_sum > EPSILON else None
 
     if slope >= 0:
@@ -931,17 +962,15 @@ def _next_power_of_two(size: int) -> int:
 
 def _quadratic_peak_frequency(
     frequencies: npt.NDArray[np.float64],
-    values_db: npt.NDArray[np.float64],
+    values: npt.NDArray[np.float64],
     index: int,
 ) -> float:
-    # The windowed FFT peak is closer to parabolic on a log-magnitude scale for display
-    # and dominant-resonance tracking, so interpolate on dB values intentionally.
-    if index <= 0 or index >= values_db.size - 1:
+    if index <= 0 or index >= values.size - 1:
         return float(frequencies[index])
 
-    alpha = values_db[index - 1]
-    beta = values_db[index]
-    gamma = values_db[index + 1]
+    alpha = values[index - 1]
+    beta = values[index]
+    gamma = values[index + 1]
     denominator = alpha - 2.0 * beta + gamma
     if abs(denominator) <= EPSILON:
         return float(frequencies[index])
@@ -956,6 +985,8 @@ def _estimate_q_factor(
     frequencies: npt.NDArray[np.float64],
     magnitude_linear: npt.NDArray[np.float64],
     peak_index: int,
+    *,
+    peak_frequency_hz: float | None = None,
 ) -> float | None:
     if magnitude_linear.size < 3:
         return None
@@ -988,10 +1019,14 @@ def _estimate_q_factor(
     if left_frequency is None or right_frequency is None:
         return None
 
-    peak_frequency = _quadratic_peak_frequency(
-        frequencies,
-        20.0 * np.log10(np.maximum(magnitude_linear, EPSILON)),
-        peak_index,
+    peak_frequency = (
+        peak_frequency_hz
+        if peak_frequency_hz is not None
+        else _quadratic_peak_frequency(
+            frequencies,
+            20.0 * np.log10(magnitude_linear + EPSILON),
+            peak_index,
+        )
     )
     bandwidth = right_frequency - left_frequency
     if bandwidth <= EPSILON:

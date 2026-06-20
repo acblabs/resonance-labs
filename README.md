@@ -78,7 +78,7 @@ Still manual:
 
 ## Quickstart
 
-Use Python 3.11+ and Node 22+.
+Use Python 3.13+ and Node 22+.
 
 ```powershell
 python -m pip install -r requirements-dev.txt
@@ -158,7 +158,8 @@ The response includes upload/decode health, matched-filter alignment metadata, a
 `POST /api/v1/explain` accepts analysis JSON plus optional compact browser-local calibration and
 reference-comparison summaries. It never accepts raw audio. By default it returns a deterministic
 DSP/reference summary; set `RESONANCELAB_LLM_ENABLED=true` on the API service to call Gemini through
-Vertex AI / Gemini Enterprise Agent Platform.
+Vertex AI / Gemini Enterprise Agent Platform. The request body is capped by
+`RESONANCELAB_MAX_EXPLAIN_BODY_BYTES` and defaults to 512 KiB.
 
 ## Repository Layout
 

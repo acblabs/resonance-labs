@@ -53,7 +53,7 @@ For project context, repository layout details, and phase gates, refer to the [i
 *   **Downsampling Policy**: Keep the native capture sample rate (typically 44.1 kHz or 48.0 kHz) to preserve high-frequency resonance details. Do not downsample unless explicitly validated and authorized.
 *   **Windowing**: Apply a Hann or Hamming window to the post-chirp or tap impulse segments to minimize spectral leakage before computing the Fast Fourier Transform (FFT).
 *   **FFT-domain filtering**: When applying frequency masks to finite captures, zero-pad before masking and crop back to the original interval. Treat unpadded FFT masks as circular convolution and therefore unsafe near capture boundaries.
-*   **Sub-bin Peak Interpolation**: To estimate peak frequencies with precision exceeding the FFT bin width $\Delta f$, perform quadratic interpolation on the log-magnitude spectrum $|Y(f)|$:
+*   **Sub-bin Peak Interpolation**: To estimate peak frequencies with precision exceeding the FFT bin width $\Delta f$, perform quadratic interpolation on the log-magnitude or dB spectrum $|Y(f)|$:
     $$\delta = \frac{1}{2} \frac{\alpha - \gamma}{\alpha - 2\beta + \gamma}$$
     where $\beta$ is the log-magnitude of the peak bin, and $\alpha, \gamma$ are the log-magnitudes of the adjacent bins. The interpolated frequency is $f_{\text{peak}} = (k_{\text{peak}} + \delta) \Delta f$.
 

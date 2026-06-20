@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from uuid import uuid4
 
 from resonancelab.audio import WavDecodeError, decode_wav_pcm
@@ -69,14 +70,18 @@ def analyze_probe_upload(
             f"Recording duration {metrics.duration_seconds:.2f}s exceeds the "
             f"{settings.max_recording_seconds:.2f}s upload limit."
         )
+    _validate_probe_against_sample_rate(metadata, decoded.sample_rate_hz)
 
-    dsp_analysis = analyze_chirp_response(
-        decoded.samples,
-        decoded.sample_rate_hz,
-        _chirp_spec_from_metadata(metadata),
-        pre_roll_seconds=metadata.probe_config.pre_roll_ms / 1000.0,
-        post_roll_seconds=metadata.probe_config.post_roll_ms / 1000.0,
-    )
+    try:
+        dsp_analysis = analyze_chirp_response(
+            decoded.samples,
+            decoded.sample_rate_hz,
+            _chirp_spec_from_metadata(metadata),
+            pre_roll_seconds=_metadata_pre_roll_seconds(metadata),
+            post_roll_seconds=_metadata_post_roll_seconds(metadata),
+        )
+    except ValueError as exc:
+        raise AnalyzeUploadError(str(exc)) from exc
     warnings = _build_warnings(
         metadata=metadata,
         duration_seconds=metrics.duration_seconds,
@@ -140,10 +145,11 @@ def _build_warnings(
         warnings.append("Recording is longer than expected for the probe configuration.")
     if dsp_analysis.alignment.confidence < ALIGNMENT_WARN_CONFIDENCE:
         warnings.append("Chirp alignment confidence is low; DSP features may be unreliable.")
-    if (
-        dsp_analysis.signal_to_noise_db is not None
-        and dsp_analysis.signal_to_noise_db < SNR_WARN_DB
-    ):
+    if dsp_analysis.signal_to_noise_db is None:
+        warnings.append(
+            "Signal-to-noise ratio could not be estimated; use a measurable pre-roll noise window."
+        )
+    elif dsp_analysis.signal_to_noise_db < SNR_WARN_DB:
         warnings.append(
             f"Signal-to-noise ratio is below the {SNR_WARN_DB:.0f} dB feasibility target."
         )
@@ -163,10 +169,48 @@ def _chirp_spec_from_metadata(metadata: ProbeMetadata) -> ChirpSpec:
     )
 
 
+def _validate_probe_against_sample_rate(metadata: ProbeMetadata, sample_rate_hz: int) -> None:
+    nyquist_hz = sample_rate_hz / 2.0
+    config = metadata.probe_config
+    if config.end_hz >= nyquist_hz:
+        raise AnalyzeUploadError(
+            f"Probe end_hz {config.end_hz} Hz must be lower than the WAV Nyquist "
+            f"frequency {nyquist_hz:.1f} Hz."
+        )
+
+
+def _metadata_pre_roll_seconds(metadata: ProbeMetadata) -> float:
+    browser = metadata.browser
+    return _timing_interval_seconds(
+        browser.recording_started_at_context_seconds,
+        browser.chirp_started_at_context_seconds,
+        fallback=metadata.probe_config.pre_roll_ms / 1000.0,
+    )
+
+
+def _metadata_post_roll_seconds(metadata: ProbeMetadata) -> float:
+    browser = metadata.browser
+    return _timing_interval_seconds(
+        browser.chirp_ended_at_context_seconds,
+        browser.capture_ended_at_context_seconds,
+        fallback=metadata.probe_config.post_roll_ms / 1000.0,
+    )
+
+
+def _timing_interval_seconds(start: float | None, end: float | None, *, fallback: float) -> float:
+    if start is None or end is None:
+        return fallback
+    duration = end - start
+    return duration if math.isfinite(duration) and duration >= 0 else fallback
+
+
 def _alignment_notes(dsp_analysis: ChirpDspAnalysis) -> list[str]:
     notes = [
         "Matched-filter alignment uses the configured logarithmic chirp as the reference.",
-        "Transfer-response features are regularized magnitude ratios, not calibrated predictions.",
+        (
+            "Transfer-response features are regularized driven-path estimates, "
+            "not calibrated predictions."
+        ),
     ]
     if dsp_analysis.alignment.confidence < ALIGNMENT_WARN_CONFIDENCE:
         notes.append(

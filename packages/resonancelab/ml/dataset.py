@@ -182,6 +182,15 @@ class DatasetManifest:
         buckets = normalize_buckets(
             label_schema.get("buckets_percent", DEFAULT_BUCKETS_PERCENT)
         )
+        raw_records = _sequence(payload.get("records"))
+        non_object_record_indices = [
+            index for index, record in enumerate(raw_records) if not isinstance(record, Mapping)
+        ]
+        if non_object_record_indices:
+            indices = ", ".join(str(index) for index in non_object_record_indices[:8])
+            raise ManifestValidationError(
+                [f"records must contain only objects; bad index(es): {indices}."]
+            )
         manifest = cls(
             dataset_id=_required_string(payload, "dataset_id"),
             created_at=_string_or_none(payload.get("created_at")),
@@ -191,8 +200,7 @@ class DatasetManifest:
             notes=_string_or_none(payload.get("notes")),
             records=tuple(
                 DatasetRecord.from_mapping(record, buckets_percent=buckets)
-                for record in _sequence(payload.get("records"))
-                if isinstance(record, Mapping)
+                for record in raw_records
             ),
             path=path,
         )
@@ -207,6 +215,11 @@ class DatasetManifest:
             errors.append("label_schema.buckets_percent must be sorted ascending.")
         if len(set(self.label_buckets_percent)) != len(self.label_buckets_percent):
             errors.append("label_schema.buckets_percent values must be unique.")
+        bucket_labels = bucket_names(self.label_buckets_percent)
+        if len(set(bucket_labels)) != len(bucket_labels):
+            errors.append(
+                "label_schema.buckets_percent values must produce unique bucket labels."
+            )
         if len(self.label_buckets_percent) < 2:
             errors.append("label_schema.buckets_percent must contain at least two buckets.")
         if self.label_buckets_percent and (

@@ -27,6 +27,24 @@ const LOW_ALIGNMENT_CONFIDENCE = 0.2;
 const LOW_SNR_DB = 12;
 const CLOSE_ANCHOR_SPAN = 0.6;
 const UNSTABLE_FEATURE_STD = 0.35;
+const SEGMENT_SCORE_MIN_SPAN = 0.35;
+const RESIDUAL_RATIO_SCALE = 0.65;
+const TOTAL_SPAN_OFFSET = 0.35;
+const TOTAL_SPAN_SCALE = 2.2;
+const REFERENCE_DISTANCE_SCALE = 1.15;
+const REFERENCE_MARGIN_SCALE = 0.65;
+const FREE_AIR_DOMINANCE_RATIO = 0.85;
+const FEATURE_NAME_ALIASES = new Map<string, string>([
+  ['decay_rate_log', 'decay_rate_log2_per_second'],
+  ['rt60_log_seconds', 'rt60_log2_seconds']
+]);
+
+type CalibrationFeatureSpace = {
+  names: string[];
+  scales: Map<string, number>;
+  weights: Map<string, number>;
+  centers: Map<string, number>;
+};
 
 export const CALIBRATION_ANCHORS: CalibrationAnchorDefinition[] = [
   { kind: 'empty', label: 'Empty', fillPercent: 0 },
@@ -104,11 +122,28 @@ export function withKnownObjectReference(
   reference: KnownObjectReference
 ): CalibrationProfile {
   const normalized = normalizeCalibrationProfile(profile);
+  const existing = normalized.knownReferences.find(
+    (candidate) =>
+      candidate.id === reference.id || sameKnownReferenceIdentity(candidate, reference)
+  );
+  const storedReference = existing
+    ? aggregateKnownObjectReference(
+        {
+          id: existing.id,
+          label: existing.label,
+          material: existing.material
+        },
+        [...existing.observations, ...reference.observations].map(normalizeObservation)
+      )
+    : reference;
+
   return {
     ...normalized,
     knownReferences: [
-      reference,
-      ...normalized.knownReferences.filter((candidate) => candidate.id !== reference.id)
+      storedReference,
+      ...normalized.knownReferences.filter(
+        (candidate) => candidate.id !== storedReference.id && candidate.id !== reference.id
+      )
     ],
     updatedAt: new Date().toISOString()
   };
@@ -280,7 +315,7 @@ export function compareKnownReferences(
   const freeAirDominates = Boolean(
     freeAir &&
       nearest?.role === 'free_air' &&
-      (!nearestObject || freeAir.distance < nearestObject.distance * 0.85)
+      (!nearestObject || freeAir.distance < nearestObject.distance * FREE_AIR_DOMINANCE_RATIO)
   );
 
   if (!nearestObject) {
@@ -437,7 +472,7 @@ export function estimateFillLevel(
     );
     freeAirDistance = euclideanDistance(queryPoint, freeAirPoint);
     const nearestAnchorDistance = nearestAnchor?.distance ?? Number.POSITIVE_INFINITY;
-    if (freeAirDistance < nearestAnchorDistance * 0.85) {
+    if (freeAirDistance < nearestAnchorDistance * FREE_AIR_DOMINANCE_RATIO) {
       freeAirTooClose = true;
       referenceMatch = {
         kind: 'free_air',
@@ -556,7 +591,7 @@ export function extractCalibrationFeatureVector(
     weight: 0.75
   });
   addFiniteFeature(features, {
-    name: 'decay_rate_log',
+    name: 'decay_rate_log2_per_second',
     label: 'Decay rate',
     value: log2Nullable(analysis.dsp.decay.decay_rate_per_second),
     unit: 'unitless',
@@ -564,7 +599,7 @@ export function extractCalibrationFeatureVector(
     weight: 0.7
   });
   addFiniteFeature(features, {
-    name: 'rt60_log_seconds',
+    name: 'rt60_log2_seconds',
     label: 'RT60',
     value: log2Nullable(analysis.dsp.decay.rt60_seconds),
     unit: 'seconds',
@@ -580,7 +615,7 @@ export function extractCalibrationFeatureVector(
       value: band.mean_db,
       unit: 'db',
       scaleHint: 4,
-      weight: 0.55
+      weight: 0.25
     });
     addFiniteFeature(features, {
       name: `transfer_${suffix}_peak_db`,
@@ -588,7 +623,7 @@ export function extractCalibrationFeatureVector(
       value: band.peak_db,
       unit: 'db',
       scaleHint: 5,
-      weight: 0.35
+      weight: 0.15
     });
   }
 
@@ -914,7 +949,7 @@ function normalizeFeatureVector(rawVector: unknown): CalibrationFeatureVector {
     schemaVersion: 1,
     features: raw.features
       .filter((feature) => Number.isFinite(feature.value))
-      .map((feature) => ({ ...feature })),
+      .map((feature) => ({ ...feature, name: canonicalFeatureName(feature.name) })),
     summary: {
       primaryPeakHz: finiteOrNull(raw.summary?.primaryPeakHz),
       spectralCentroidHz: finiteOrNull(raw.summary?.spectralCentroidHz),
@@ -1041,13 +1076,9 @@ function anchorDefinition(kind: CalibrationAnchorKind): CalibrationAnchorDefinit
 function buildFeatureSpace(
   query: CalibrationFeatureVector,
   anchors: CalibrationFeatureVector[]
-): {
-  names: string[];
-  scales: Map<string, number>;
-  weights: Map<string, number>;
-} {
+): CalibrationFeatureSpace {
   if (anchors.length === 0) {
-    return { names: [], scales: new Map(), weights: new Map() };
+    return { names: [], scales: new Map(), weights: new Map(), centers: new Map() };
   }
 
   const queryMap = featureMap(query);
@@ -1055,6 +1086,7 @@ function buildFeatureSpace(
   const names = [...queryMap.keys()].filter((name) => anchorMaps.every((map) => map.has(name)));
   const scales = new Map<string, number>();
   const weights = new Map<string, number>();
+  const centers = new Map<string, number>();
 
   for (const name of names) {
     const features = anchorMaps.map((map) => map.get(name) as CalibrationFeature);
@@ -1064,35 +1096,40 @@ function buildFeatureSpace(
     const weight = Math.max(...features.map((feature) => feature.weight));
     scales.set(name, Math.max(scaleHint, range, EPSILON));
     weights.set(name, Math.max(weight, EPSILON));
+    centers.set(name, mean(values));
   }
 
-  return { names, scales, weights };
+  return { names, scales, weights, centers };
 }
 
 function featureMap(vector: CalibrationFeatureVector): Map<string, CalibrationFeature> {
   const map = new Map<string, CalibrationFeature>();
   for (const feature of vector.features) {
     if (Number.isFinite(feature.value)) {
-      map.set(feature.name, feature);
+      map.set(canonicalFeatureName(feature.name), {
+        ...feature,
+        name: canonicalFeatureName(feature.name)
+      });
     }
   }
   return map;
 }
 
+function canonicalFeatureName(name: string): string {
+  return FEATURE_NAME_ALIASES.get(name) ?? name;
+}
+
 function projectFeatureVector(
   vector: CalibrationFeatureVector,
-  featureSpace: {
-    names: string[];
-    scales: Map<string, number>;
-    weights: Map<string, number>;
-  }
+  featureSpace: CalibrationFeatureSpace
 ): number[] {
-  const features = new Map(vector.features.map((feature) => [feature.name, feature]));
+  const features = featureMap(vector);
   return featureSpace.names.map((name) => {
     const feature = features.get(name);
     const scale = featureSpace.scales.get(name) ?? 1;
     const weight = Math.sqrt(featureSpace.weights.get(name) ?? 1);
-    return feature ? (feature.value / scale) * weight : 0;
+    const value = feature?.value ?? featureSpace.centers.get(name) ?? 0;
+    return (value / scale) * weight;
   });
 }
 
@@ -1125,7 +1162,7 @@ function projectOntoSegment(
 }
 
 function segmentScore(segment: { residualDistance: number; spanDistance: number }): number {
-  return segment.residualDistance / Math.max(segment.spanDistance, 0.35);
+  return segment.residualDistance / Math.max(segment.spanDistance, SEGMENT_SCORE_MIN_SPAN);
 }
 
 function estimateConfidence({
@@ -1155,9 +1192,9 @@ function estimateConfidence({
   freeAirTooClose: boolean;
   warningCount: number;
 }): number {
-  const residualRatio = residualDistance / Math.max(segmentSpan, 0.35);
-  const residualFactor = Math.exp(-Math.pow(residualRatio / 0.65, 2));
-  const spanFactor = clamp((totalSpan - 0.35) / 2.2, 0.18, 1);
+  const residualRatio = residualDistance / Math.max(segmentSpan, SEGMENT_SCORE_MIN_SPAN);
+  const residualFactor = Math.exp(-Math.pow(residualRatio / RESIDUAL_RATIO_SCALE, 2));
+  const spanFactor = clamp((totalSpan - TOTAL_SPAN_OFFSET) / TOTAL_SPAN_SCALE, 0.18, 1);
   const featureFactor = clamp(comparableFeatureCount / 10, 0.25, 1);
   const alignmentFactor = clamp((analysis.alignment.confidence - 0.12) / 0.68, 0.12, 1);
   const snr = analysis.dsp.signal_to_noise_db;
@@ -1230,10 +1267,10 @@ function referenceComparisonConfidence({
   freeAirDominates: boolean;
   warningCount: number;
 }): number {
-  const distanceFactor = Math.exp(-Math.pow(nearestDistance / 1.15, 2));
+  const distanceFactor = Math.exp(-Math.pow(nearestDistance / REFERENCE_DISTANCE_SCALE, 2));
   const marginRatio =
-    margin === null ? 0.35 : margin / Math.max(nearestDistance, 0.35);
-  const marginFactor = clamp(marginRatio / 0.65, 0.12, 1);
+    margin === null ? SEGMENT_SCORE_MIN_SPAN : margin / Math.max(nearestDistance, SEGMENT_SCORE_MIN_SPAN);
+  const marginFactor = clamp(marginRatio / REFERENCE_MARGIN_SCALE, 0.12, 1);
   const featureFactor = clamp(comparableFeatureCount / 10, 0.25, 1);
   const alignmentFactor = clamp((analysis.alignment.confidence - 0.12) / 0.68, 0.12, 1);
   const snr = analysis.dsp.signal_to_noise_db;
@@ -1607,6 +1644,17 @@ function sanitizeReferenceLabel(label: string): string {
 function sanitizeReferenceMaterial(material: string): string {
   const trimmed = material.trim().toLowerCase();
   return trimmed.length > 0 ? trimmed.slice(0, 60) : 'unknown';
+}
+
+function sameKnownReferenceIdentity(
+  left: KnownObjectReference,
+  right: KnownObjectReference
+): boolean {
+  return (
+    sanitizeReferenceLabel(left.label).toLowerCase() ===
+      sanitizeReferenceLabel(right.label).toLowerCase() &&
+    sanitizeReferenceMaterial(left.material) === sanitizeReferenceMaterial(right.material)
+  );
 }
 
 function createId(prefix: string): string {

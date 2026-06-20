@@ -155,8 +155,14 @@ class AlignmentMetadata(BaseModel):
 
 
 class FrequencySeries(BaseModel):
-    frequency_bins_hz: list[float]
-    magnitude_db: list[float]
+    frequency_bins_hz: list[float] = Field(max_length=2048)
+    magnitude_db: list[float] = Field(max_length=2048)
+
+    @model_validator(mode="after")
+    def validate_lengths(self) -> FrequencySeries:
+        if len(self.frequency_bins_hz) != len(self.magnitude_db):
+            raise ValueError("frequency_bins_hz and magnitude_db must have the same length.")
+        return self
 
 
 class SpectralFeatures(BaseModel):
@@ -169,9 +175,19 @@ class SpectralFeatures(BaseModel):
 
 class SpectrogramGrid(BaseModel):
     kind: Literal["stft", "mel"]
-    times_seconds: list[float]
-    frequency_bins_hz: list[float]
-    magnitude_db: list[list[float]]
+    times_seconds: list[float] = Field(max_length=120)
+    frequency_bins_hz: list[float] = Field(max_length=256)
+    magnitude_db: list[list[float]] = Field(max_length=256)
+
+    @model_validator(mode="after")
+    def validate_grid_shape(self) -> SpectrogramGrid:
+        if len(self.magnitude_db) != len(self.frequency_bins_hz):
+            raise ValueError("magnitude_db row count must match frequency_bins_hz length.")
+        if any(len(row) != len(self.times_seconds) for row in self.magnitude_db):
+            raise ValueError("each magnitude_db row must match times_seconds length.")
+        if len(self.times_seconds) * len(self.frequency_bins_hz) > 40000:
+            raise ValueError("spectrogram grid is too large.")
+        return self
 
 
 class TransferBandFeature(BaseModel):
@@ -193,7 +209,13 @@ class DecayFeature(BaseModel):
     method: Literal["rms_envelope_log_linear"]
     decay_rate_per_second: float | None
     rt60_seconds: float | None
-    fit_r2: float | None
+    fit_r2: float | None = Field(
+        default=None,
+        description=(
+            "Weighted coefficient of determination for the floor-adjusted "
+            "RMS-envelope log-linear fit."
+        ),
+    )
     window_start_seconds: float
     window_end_seconds: float
 
@@ -205,8 +227,8 @@ class DspAnalysis(BaseModel):
     fft: SpectralFeatures
     stft: SpectrogramGrid
     mel_spectrogram: SpectrogramGrid
-    transfer_response: list[TransferBandFeature]
-    dominant_peaks: list[PeakFeature]
+    transfer_response: list[TransferBandFeature] = Field(max_length=16)
+    dominant_peaks: list[PeakFeature] = Field(max_length=12)
     decay: DecayFeature
 
 
@@ -217,7 +239,7 @@ class AnalysisResponse(BaseModel):
     probe: ProbeMetadata
     alignment: AlignmentMetadata
     dsp: DspAnalysis
-    warnings: list[str]
+    warnings: list[str] = Field(max_length=64)
 
 
 class ExplainAnchorDistance(BaseModel):
@@ -291,10 +313,10 @@ class LlmExplainRequest(BaseModel):
 
 class LlmExplanation(BaseModel):
     summary: str
-    observations: list[str]
-    material_hypotheses: list[str]
-    caveats: list[str]
-    next_measurement: list[str]
+    observations: list[str] = Field(max_length=8)
+    material_hypotheses: list[str] = Field(max_length=8)
+    caveats: list[str] = Field(max_length=8)
+    next_measurement: list[str] = Field(max_length=8)
 
 
 class LlmExplainResponse(BaseModel):

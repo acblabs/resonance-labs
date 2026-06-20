@@ -83,7 +83,7 @@ def _decode_interleaved_pcm(raw_frames: bytes, sample_width_bytes: int) -> npt.N
 
     if sample_width_bytes == 1:
         samples = np.frombuffer(raw_frames, dtype=np.uint8).astype(np.float64)
-        return (samples - 127.5) / 127.5
+        return (samples - 128.0) / 128.0
 
     if sample_width_bytes == 2:
         samples = np.frombuffer(raw_frames, dtype="<i2").astype(np.float64)

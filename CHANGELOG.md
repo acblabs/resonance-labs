@@ -32,6 +32,7 @@ All notable changes to ResonanceLab will be documented in this file.
 - Private Phase 4 Cloud Build pipeline for GCS-hosted datasets, generated features, model artifacts, and benchmark reports.
 - Phase 4 recording protocol, baseline workflow, dataset manifest JSON Schema, example manifest, model-card template, benchmark result landing zone, and evaluation notebook skeleton.
 - Phase 4 unit coverage for feature extraction, manifest validation, split leakage prevention, and synthetic baseline training.
+- Explain request body limits and schema caps for compact LLM evidence payloads.
 - Cloud Run deployment path in Cloud Build, gated by `_DEPLOY_TARGET=cloud-run` so default and PR builds do not deploy.
 - Cloud Run API and web deploys now explicitly use the second-generation execution environment with startup CPU boost enabled.
 - Cloud Run API CORS now allows both generated Cloud Run web URL forms, and the web service uses the project-number API URL.
@@ -92,6 +93,10 @@ All notable changes to ResonanceLab will be documented in this file.
 - Calibration UI state moved into a dedicated Svelte component while preserving the existing probe workflow.
 - Repeated calibration frequency summaries now use log-domain averaging to match the feature space.
 - Calibration estimates are memoized by analysis and profile update identity in the UI.
+- Calibration feature extraction now emits canonical Phase 4 decay feature names and aliases older
+  local profile decay names on import.
+- Transfer-response features are now lower-weight same-setup path evidence in browser calibration
+  and reference comparison.
 - FFT-domain bandpass filtering now zero-pads before masking and crops the filtered result to reduce circular boundary wraparound.
 - Analyze responses now return Phase 2 DSP features and matched-filter alignment metadata instead of placeholder alignment.
 - Analyze and models endpoints now expose typed FastAPI response schemas.
@@ -108,6 +113,18 @@ All notable changes to ResonanceLab will be documented in this file.
 
 - LLM explanation requests now exclude raw WAV bytes and full high-dimensional signal grids from the
   hosted model path.
+- Analyze rejects probe configurations whose chirp end frequency reaches the decoded WAV Nyquist
+  limit.
+- Analyze uses browser timing metadata, when available, for the expected chirp position and post-roll
+  analysis window.
+- Transfer-response features now use regularized complex deconvolution over the driven response
+  window instead of subtracting magnitudes.
+- Dominant-peak interpolation now uses dB-domain parabolic interpolation while Q estimation keeps
+  linear half-power bandwidth calculations.
+- Decay fitting subtracts a local envelope floor and weights higher-SNR envelope frames.
+- Phase 4 manifests now reject non-object records and bucket schemas whose rounded labels collide.
+- Phase 4 baseline metrics now warn on missing or highly imbalanced fill-bucket coverage across
+  train/test splits.
 - Dataset Capture numeric inputs now accept browser-coerced number values, unblocking Save Dataset
   Capture when fill percent or mass fields are entered as number inputs.
 - Calibration cards no longer describe saved anchors as having no samples when only the optional peak summary is unavailable.

@@ -20,6 +20,7 @@ from resonancelab.ml import (
     run_phase4_benchmark,
     train_phase4_baseline,
 )
+from resonancelab.ml.splits import _fallback_group_shuffle_keys
 
 
 class Phase4MlTests(unittest.TestCase):
@@ -108,6 +109,51 @@ class Phase4MlTests(unittest.TestCase):
 
         self.assertIn("duplicate record id", str(error.exception))
 
+    def test_manifest_validation_rejects_non_object_records(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_feature_file(root / "a.features.json", {"fill_proxy": 0.0})
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    _manifest_payload(
+                        root,
+                        [
+                            _record("record-001", "s1", 0.0, "a.features.json"),
+                            "not-a-record-object",
+                        ],
+                    )
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ManifestValidationError) as error:
+                load_manifest(manifest_path)
+
+        self.assertIn("records must contain only objects", str(error.exception))
+        self.assertIn("bad index(es): 1", str(error.exception))
+
+    def test_manifest_validation_rejects_colliding_bucket_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_feature_file(root / "a.features.json", {"fill_proxy": 0.0})
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    _manifest_payload(
+                        root,
+                        [_record("record-001", "s1", 0.0, "a.features.json")],
+                        buckets=(0.0, 33.3, 33.4, 100.0),
+                    )
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ManifestValidationError) as error:
+                load_manifest(manifest_path)
+
+        self.assertIn("unique bucket labels", str(error.exception))
+
     def test_group_holdout_split_prevents_session_leakage(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             manifest_path = _write_synthetic_manifest(Path(directory), session_count=6)
@@ -157,6 +203,22 @@ class Phase4MlTests(unittest.TestCase):
                     )
                 )
             )
+
+        self.assertGreater(len(test_sets), 1)
+
+    def test_fallback_group_holdout_split_changes_with_random_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest_path = _write_synthetic_manifest(Path(directory), session_count=10)
+            manifest = load_manifest(manifest_path)
+
+        grouped = {}
+        for record in manifest.active_records():
+            grouped.setdefault(record.group_key(("session_id",)), []).append(record)
+
+        test_sets = {
+            tuple(sorted(_fallback_group_shuffle_keys(grouped, 0.3, seed)))
+            for seed in range(5)
+        }
 
         self.assertGreater(len(test_sets), 1)
 
@@ -222,6 +284,34 @@ class Phase4MlTests(unittest.TestCase):
         confusion = result.metrics["classification"]["confusion_matrix"]
         self.assertIn("33_percent", confusion)
         self.assertIn("66_percent", confusion)
+
+    def test_train_phase4_baseline_warns_on_holdout_label_gaps(self) -> None:
+        try:
+            import sklearn  # noqa: F401
+        except ModuleNotFoundError:
+            self.skipTest("scikit-learn is not installed in this environment.")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = _write_synthetic_manifest(
+                root,
+                session_count=1,
+                fills=(0.0, 25.0, 50.0, 75.0, 100.0),
+                group_by_fill=True,
+            )
+
+            result = train_phase4_baseline(
+                manifest_path,
+                holdout_fraction=0.2,
+                random_state=2,
+                repeated_holdouts=1,
+            )
+
+        warnings = result.metrics["warnings"]
+        self.assertTrue(
+            any("absent from training" in warning for warning in warnings)
+            or any("does not cover training" in warning for warning in warnings)
+        )
 
     def test_phase4_benchmark_report_tags_standard_regimes(self) -> None:
         try:
@@ -428,6 +518,7 @@ def _write_synthetic_manifest(
     buckets: tuple[float, ...] = (0.0, 25.0, 50.0, 75.0, 100.0),
     fills: tuple[float, ...] = (0.0, 25.0, 50.0, 75.0, 100.0),
     varied_context: bool = False,
+    group_by_fill: bool = False,
 ) -> Path:
     records = []
     for session_index in range(session_count):
@@ -456,6 +547,7 @@ def _write_synthetic_manifest(
                     feature_path,
                     varied_context=varied_context,
                     session_index=session_index,
+                    group_by_fill=group_by_fill,
                 )
             )
 
@@ -492,7 +584,9 @@ def _record(
     *,
     varied_context: bool = False,
     session_index: int = 0,
+    group_by_fill: bool = False,
 ) -> dict:
+    record_session_id = f"session-fill-{int(fill_percent):03d}" if group_by_fill else session_id
     glass_id = f"glass-{session_index % 4}" if varied_context else "glass-a"
     device_id = f"device-{session_index % 3}" if varied_context else f"device-{session_id[-2:]}"
     browser_id = f"browser-{session_index % 3}" if varied_context else "chrome-125"
@@ -501,7 +595,7 @@ def _record(
         "features_path": feature_path,
         "label": {"fill_percent": fill_percent},
         "context": {
-            "session_id": session_id,
+            "session_id": record_session_id,
             "glass_id": glass_id,
             "device_id": device_id,
             "browser_id": browser_id,

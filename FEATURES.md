@@ -82,6 +82,7 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
   comparable-feature counts for the current probe.
 - Structured `/api/v1/explain` endpoint for compact DSP, calibration, and reference-comparison
   summaries.
+- Bounded `/api/v1/explain` request bodies for the structured LLM evidence path.
 - Lab UI explanation panel with deterministic fallback summaries when the hosted LLM is disabled.
 - Optional Gemini lab-assistant path using `gemini-3.1-pro-preview`, `global`, and `HIGH` thinking
   level through Cloud Run service identity.
@@ -92,14 +93,18 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - Canonical Python feature extraction from saved API analysis JSON or raw PCM WAV records.
 - Optional derived Phase 4 manifest generation that points raw WAV or analysis records at extracted feature JSON.
 - Stable tabular ML feature names for resonance peaks, spectral summaries, decay estimates, transfer-response bands, and fixed 20-band mel-spectrogram summaries.
+- Browser calibration feature names stay aligned with the canonical Phase 4 Python feature schema,
+  with legacy profile aliases for older local decay-feature names.
 - Raw STFT-bin features excluded from Phase 4 model inputs to avoid sample-rate/window-dependent dimensionality.
 - Leakage-aware group holdout splitting by session, glass, device, browser, or combined context fields, with repeated group-holdout helper support.
 - Offline scikit-learn baseline trainer with repeated grouped holdout evaluation, fill-percent regression, and fill-bucket classification heads using sparse linear or random-forest model families.
 - Manifest-defined fill buckets threaded through classification, references, confusion matrices, and within-one-bucket metrics.
+- Manifest validation rejects bucket schemas that collapse to duplicate class labels after rounding.
 - Quality gates for missing/weak chirp alignment and missing/low SNR before model fitting.
 - Quality audit metrics for retained, skipped, missing-quality, weak-alignment, and low-SNR records.
 - Train-set feature filtering for all-missing and constant columns before imputation/model fitting.
 - Missingness indicators added during imputation so absent feature families remain visible to models.
+- Group holdout evaluations warn when train/test label coverage is absent or highly imbalanced.
 - Reference metrics for global mean, global median, nearest canonical bucket, and train-mode bucket classification baselines.
 - Baseline artifact export with `joblib`, metrics JSON, feature schema, feature importance, and generated model card.
 - Compiled benchmark reports across session, glass, device, and browser holdout regimes.

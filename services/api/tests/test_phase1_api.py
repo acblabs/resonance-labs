@@ -164,6 +164,50 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertGreater(len(payload["dsp"]["mel_spectrogram"]["magnitude_db"]), 0)
         self.assertGreater(len(payload["dsp"]["transfer_response"]), 0)
 
+    def test_analyze_rejects_probe_above_wav_nyquist(self) -> None:
+        metadata = _probe_metadata()
+        metadata["probe_config"]["end_hz"] = 10000
+        response = self.client.post(
+            "/api/v1/analyze",
+            files={
+                "audio": (
+                    "low-rate.wav",
+                    make_sine_wav(sample_rate_hz=16000, duration_seconds=1.0),
+                    "audio/wav",
+                )
+            },
+            data={"metadata": json.dumps(metadata)},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Nyquist", response.json()["detail"])
+
+    def test_analyze_uses_browser_timing_for_expected_chirp_start(self) -> None:
+        metadata = _probe_metadata()
+        metadata["probe_config"]["pre_roll_ms"] = 0
+        metadata["browser"].update(
+            {
+                "recording_started_at_context_seconds": 10.0,
+                "chirp_started_at_context_seconds": 10.25,
+                "chirp_ended_at_context_seconds": 10.75,
+                "capture_ended_at_context_seconds": 11.75,
+            }
+        )
+
+        response = self.client.post(
+            "/api/v1/analyze",
+            files={"audio": ("probe.wav", make_probe_wav(), "audio/wav")},
+            data={"metadata": json.dumps(metadata)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertAlmostEqual(payload["alignment"]["expected_start_seconds"], 0.25)
+        self.assertNotIn(
+            "Signal-to-noise ratio could not be estimated",
+            " ".join(payload["warnings"]),
+        )
+
     def test_explain_returns_structured_summary_without_raw_audio(self) -> None:
         analysis = self._analyze_probe_payload()
         with patch.dict(os.environ, {"RESONANCELAB_LLM_ENABLED": "false"}):
@@ -237,6 +281,18 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertGreater(len(payload["explanation"]["observations"]), 0)
         self.assertNotIn("series", json.dumps(payload["evidence"]))
 
+    def test_explain_rejects_oversized_json_body_before_model_parsing(self) -> None:
+        with patch.dict(os.environ, {"RESONANCELAB_MAX_EXPLAIN_BODY_BYTES": "64"}):
+            get_settings.cache_clear()
+            client = TestClient(create_app())
+            response = client.post(
+                "/api/v1/explain",
+                json={"analysis": self._analyze_probe_payload(), "include_raw_audio": False},
+            )
+            get_settings.cache_clear()
+
+        self.assertEqual(response.status_code, 413)
+
     def test_explain_rejects_raw_audio_flag(self) -> None:
         analysis = self._analyze_probe_payload()
         response = self.client.post(
@@ -255,7 +311,8 @@ class Phase1ApiTests(unittest.TestCase):
     def test_decode_wav_pcm_normalizes_unsigned_8bit_edges(self) -> None:
         decoded = decode_wav_pcm(make_unsigned_8bit_wav())
         self.assertEqual(decoded.samples[0], -1.0)
-        self.assertAlmostEqual(decoded.samples[-1], 1.0)
+        self.assertEqual(decoded.samples[1], 0.0)
+        self.assertAlmostEqual(decoded.samples[-1], 127.0 / 128.0)
 
     def test_dataset_capture_endpoint_is_hidden_when_disabled(self) -> None:
         response = self.client.post(

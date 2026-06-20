@@ -224,7 +224,7 @@ def _evaluate_split(
     y_test_cls = np.asarray(
         [bucket_name(nearest_fill_bucket(value, buckets_percent)) for value in y_test_reg]
     )
-    warnings: list[str] = []
+    warnings = _split_label_warnings(y_train_cls, y_test_cls, buckets_percent)
     if len(preprocessed.model_feature_names) > y_train_reg.size:
         warnings.append(
             "Model feature count exceeds train row count; treat this split as high overfit risk."
@@ -557,6 +557,54 @@ def _classification_metrics(
         ),
         "confusion_matrix": confusion,
     }
+
+
+def _split_label_warnings(
+    y_train_cls: np.ndarray,
+    y_test_cls: np.ndarray,
+    buckets_percent: Sequence[float],
+) -> list[str]:
+    ordered_labels = list(bucket_names(buckets_percent))
+    train_labels = {str(label) for label in y_train_cls}
+    test_labels = {str(label) for label in y_test_cls}
+    warnings: list[str] = []
+
+    missing_train = sorted(
+        test_labels - train_labels,
+        key=lambda label: (_bucket_index(label, buckets_percent), label),
+    )
+    if missing_train:
+        warnings.append(
+            "Test split contains fill buckets absent from training: "
+            + ", ".join(missing_train)
+            + "."
+        )
+
+    missing_test = sorted(
+        train_labels - test_labels,
+        key=lambda label: (_bucket_index(label, buckets_percent), label),
+    )
+    if missing_test:
+        warnings.append(
+            "Test split does not cover training fill buckets: "
+            + ", ".join(missing_test)
+            + "."
+        )
+
+    for split_name, labels in (("train", y_train_cls), ("test", y_test_cls)):
+        if len({str(label) for label in labels}) < min(2, len(ordered_labels)):
+            warnings.append(f"{split_name.capitalize()} split has fewer than two fill buckets.")
+            continue
+        counts = np.asarray(
+            [np.sum(labels == label) for label in ordered_labels],
+            dtype=np.float64,
+        )
+        if counts.sum() > 0 and float(np.max(counts) / counts.sum()) >= 0.8:
+            warnings.append(
+                f"{split_name.capitalize()} split label distribution is highly imbalanced."
+            )
+
+    return warnings
 
 
 def _repeated_holdout_summary(evaluations: Sequence[SplitEvaluation]) -> dict[str, Any]:

@@ -38,6 +38,10 @@ describe('calibration feature extraction', () => {
     expect(vector.summary.primaryPeakHz).toBe(1500);
     expect(vector.features.length).toBeGreaterThan(12);
     expect(vector.features.every((feature) => Number.isFinite(feature.value))).toBe(true);
+    expect(vector.features.some((feature) => feature.name === 'decay_rate_log2_per_second')).toBe(
+      true
+    );
+    expect(vector.features.some((feature) => feature.name === 'decay_rate_log')).toBe(false);
   });
 });
 
@@ -208,6 +212,21 @@ describe('calibration estimator', () => {
     expect(comparison.freeAirDominates).toBe(false);
     expect(comparison.comparableFeatureCount).toBeGreaterThan(8);
     expect(comparison.confidence).toBeGreaterThan(0.4);
+  });
+
+  it('aggregates same-label known-object repeats instead of creating duplicates', () => {
+    let profile = completeProfile(1600, 1400, 1200);
+    profile = withKnownObjectReference(
+      profile,
+      createKnownObjectReference(makeAnalysis('ceramic-a', 2300), 'Ceramic mug', 'Ceramic')
+    );
+    profile = withKnownObjectReference(
+      profile,
+      createKnownObjectReference(makeAnalysis('ceramic-b', 2290), 'ceramic mug', 'ceramic')
+    );
+
+    expect(profile.knownReferences).toHaveLength(1);
+    expect(profile.knownReferences[0].sampleCount).toBe(2);
   });
 
   it('marks reference comparison as free-air dominated when the room path wins', () => {

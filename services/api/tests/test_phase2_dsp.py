@@ -11,6 +11,7 @@ from resonancelab.dsp import (
     ChirpSpec,
     analyze_chirp_response,
     apply_fft_bandpass,
+    compute_transfer_response,
     estimate_decay,
     find_dominant_peaks,
     generate_log_chirp,
@@ -200,6 +201,47 @@ class Phase2DspGoldenTests(unittest.TestCase):
         self.assertEqual(len(analysis.mel_spectrogram.magnitude_db), 40)
         self.assertTrue(_finite_grid(analysis.mel_spectrogram.magnitude_db))
 
+    def test_transfer_response_uses_regularized_deconvolution(self) -> None:
+        reference = generate_log_chirp(GOLDEN_CHIRP, SAMPLE_RATE_HZ)
+        captured = 0.5 * reference
+
+        bands = compute_transfer_response(
+            captured,
+            reference,
+            SAMPLE_RATE_HZ,
+            min_hz=GOLDEN_CHIRP.start_hz,
+            max_hz=GOLDEN_CHIRP.end_hz,
+        )
+
+        self.assertGreater(len(bands), 0)
+        means = [band.mean_db for band in bands]
+        self.assertTrue(all(math.isfinite(value) for value in means))
+        in_band_means = [
+            band.mean_db for band in bands if band.end_hz <= GOLDEN_CHIRP.end_hz * 0.9
+        ]
+        self.assertGreater(len(in_band_means), 0)
+        self.assertLess(max(abs(value + 6.0) for value in in_band_means), 3.0)
+
+    def test_transfer_response_handles_longer_response_window(self) -> None:
+        reference = generate_log_chirp(GOLDEN_CHIRP, SAMPLE_RATE_HZ)
+        captured = np.zeros(reference.size + int(round(0.25 * SAMPLE_RATE_HZ)))
+        captured[: reference.size] = 0.5 * reference
+
+        bands = compute_transfer_response(
+            captured,
+            reference,
+            SAMPLE_RATE_HZ,
+            min_hz=GOLDEN_CHIRP.start_hz,
+            max_hz=GOLDEN_CHIRP.end_hz,
+        )
+
+        in_band_means = [
+            band.mean_db for band in bands if band.end_hz <= GOLDEN_CHIRP.end_hz * 0.9
+        ]
+        self.assertGreater(len(in_band_means), 0)
+        self.assertTrue(all(math.isfinite(value) for value in in_band_means))
+        self.assertLess(max(abs(value + 6.0) for value in in_band_means), 3.0)
+
     def test_decay_window_start_uses_fallback_slice_start(self) -> None:
         reference = generate_log_chirp(GOLDEN_CHIRP, SAMPLE_RATE_HZ)
         expected_start = int(round(PRE_ROLL_SECONDS * SAMPLE_RATE_HZ))
@@ -279,6 +321,23 @@ class Phase2DspGoldenTests(unittest.TestCase):
         self.assertAlmostEqual(peaks[0].frequency_hz, frequency_hz, delta=8.0)
         self.assertIsNotNone(decay.decay_rate_per_second)
         self.assertAlmostEqual(decay.decay_rate_per_second or 0.0, decay_rate, delta=0.55)
+
+    def test_parabolic_peak_interpolation_recovers_non_bin_tone(self) -> None:
+        frequency_hz = 1375.37
+        time = np.arange(int(0.5 * SAMPLE_RATE_HZ), dtype=np.float64) / SAMPLE_RATE_HZ
+        samples = 0.25 * np.sin(2.0 * math.pi * frequency_hz * time)
+
+        peaks = find_dominant_peaks(
+            samples,
+            SAMPLE_RATE_HZ,
+            min_hz=900.0,
+            max_hz=1800.0,
+            max_peaks=1,
+            min_prominence_db=12.0,
+        )
+
+        self.assertGreaterEqual(len(peaks), 1)
+        self.assertAlmostEqual(peaks[0].frequency_hz, frequency_hz, delta=0.25)
 
     def test_q_factor_interpolates_half_power_crossings(self) -> None:
         frequencies = np.arange(990.0, 1011.0, 1.0)

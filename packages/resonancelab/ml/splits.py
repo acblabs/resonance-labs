@@ -192,15 +192,28 @@ def _fallback_group_shuffle_keys(
 ) -> set[tuple[str, ...]]:
     group_keys = sorted(grouped, key=repr)
     random.Random(random_state).shuffle(group_keys)
+    shuffled_rank = {group_key: rank for rank, group_key in enumerate(group_keys)}
     total_records = sum(len(records) for records in grouped.values())
     target_count = max(1, min(total_records - 1, round(total_records * holdout_fraction)))
     test_keys: set[tuple[str, ...]] = set()
     test_count = 0
-    for group_key in group_keys:
-        if len(test_keys) >= len(group_keys) - 1:
+    remaining = set(group_keys)
+    while remaining and len(test_keys) < len(group_keys) - 1:
+        candidates = sorted(
+            remaining,
+            key=lambda group_key: (
+                abs(target_count - (test_count + len(grouped[group_key]))),
+                len(grouped[group_key]),
+                shuffled_rank[group_key],
+            ),
+        )
+        group_key = candidates[0]
+        next_count = test_count + len(grouped[group_key])
+        if test_keys and abs(target_count - test_count) <= abs(target_count - next_count):
             break
+        remaining.remove(group_key)
         test_keys.add(group_key)
-        test_count += len(grouped[group_key])
+        test_count = next_count
         if test_count >= target_count:
             break
     return test_keys

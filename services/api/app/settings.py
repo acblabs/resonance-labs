@@ -48,6 +48,11 @@ class Settings:
     max_recording_seconds: float = field(
         default_factory=lambda: float(os.getenv("RESONANCELAB_MAX_RECORDING_SECONDS", "8.0"))
     )
+    max_explain_body_bytes: int = field(
+        default_factory=lambda: int(
+            os.getenv("RESONANCELAB_MAX_EXPLAIN_BODY_BYTES", str(512 * 1024))
+        )
+    )
     allowed_content_types: tuple[str, ...] = field(
         default_factory=lambda: _csv_env(
             "RESONANCELAB_ALLOWED_CONTENT_TYPES",
