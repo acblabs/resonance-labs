@@ -10,7 +10,9 @@ import {
   extractCalibrationFeatureVector,
   importCalibrationProfile,
   withFreeAirReference,
-  withCalibrationAnchor
+  withCalibrationAnchor,
+  withoutCalibrationAnchor,
+  withoutFreeAirReference
 } from './calibration';
 
 const PROBE_CONFIG: ProbeConfig = {
@@ -163,6 +165,46 @@ describe('calibration estimator', () => {
     expect(profile.freeAirReference?.sampleCount).toBe(1);
     expect(estimate.freeAirDistance).not.toBeNull();
     expect(estimate.warnings.join(' ')).not.toContain('No free-air reference');
+  });
+
+  it('reports free air instead of forcing a nearest glass anchor', () => {
+    let profile = completeProfile(1600, 1400, 1200);
+    profile = withFreeAirReference(
+      profile,
+      createFreeAirReference(makeAnalysis('free-air', 900))
+    );
+
+    const estimate = estimateFillLevel(makeAnalysis('glass-absent', 900), profile);
+
+    expect(estimate.status).toBe('ready');
+    expect(estimate.referenceMatch?.kind).toBe('free_air');
+    expect(estimate.fillPercent).toBeNull();
+    expect(estimate.nearestAnchor).toBeNull();
+    expect(estimate.confidenceLabel).toBe('none');
+    expect(estimate.references.nearestAnchorPercent).toBe(100);
+    expect(estimate.warnings.join(' ')).toContain('free-air reference');
+  });
+
+  it('clears one anchor without deleting the rest of the profile', () => {
+    const profile = withoutCalibrationAnchor(completeProfile(1600, 1400, 1200), 'half');
+
+    expect(profile.anchors.empty?.sampleCount).toBe(1);
+    expect(profile.anchors.half).toBeUndefined();
+    expect(profile.anchors.full?.sampleCount).toBe(1);
+    expect(estimateFillLevel(makeAnalysis('query', 1300), profile).status).toBe('incomplete');
+  });
+
+  it('clears free-air references without deleting fill anchors', () => {
+    let profile = withFreeAirReference(
+      completeProfile(1600, 1400, 1200),
+      createFreeAirReference(makeAnalysis('free-air', 900))
+    );
+
+    profile = withoutFreeAirReference(profile);
+
+    expect(profile.freeAirReference).toBeNull();
+    expect(profile.anchors.empty?.sampleCount).toBe(1);
+    expect(estimateFillLevel(makeAnalysis('query', 1300), profile).status).toBe('ready');
   });
 
   it('exports and imports normalized local profile JSON', () => {

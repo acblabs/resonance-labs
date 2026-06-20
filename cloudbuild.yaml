@@ -1,8 +1,27 @@
 substitutions:
+  _DEPLOY_TARGET: none
   _REGION: us-central1
   _ARTIFACT_REGISTRY_REPO: resonancelab
   _WEB_IMAGE: resonancelab-web
   _API_IMAGE: resonancelab-api
+  _WEB_SERVICE: resonancelab-web
+  _API_SERVICE: resonancelab-api
+  _RUN_SERVICE_ACCOUNT: resonancelab-run
+  _WEB_MEMORY: 512Mi
+  _WEB_CPU: "1"
+  _WEB_CONCURRENCY: "80"
+  _WEB_MIN_INSTANCES: "0"
+  _WEB_MAX_INSTANCES: "3"
+  _WEB_TIMEOUT: 30s
+  _API_MEMORY: 1Gi
+  _API_CPU: "1"
+  _API_CONCURRENCY: "2"
+  _API_MIN_INSTANCES: "0"
+  _API_MAX_INSTANCES: "3"
+  _API_TIMEOUT: 45s
+  _API_MAX_UPLOAD_BYTES: "8388608"
+  _API_MAX_RECORDING_SECONDS: "8.0"
+  _EXTRA_CORS_ORIGINS: none
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -38,7 +57,7 @@ steps:
       - -f
       - services/api/Dockerfile
       - -t
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_API_IMAGE}:$SHORT_SHA
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_API_IMAGE}:$BUILD_ID
       - .
 
   - id: build-web-image
@@ -48,9 +67,109 @@ steps:
       - -f
       - apps/web/Dockerfile
       - -t
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_WEB_IMAGE}:$SHORT_SHA
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_WEB_IMAGE}:$BUILD_ID
       - .
 
-images:
-  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_API_IMAGE}:$SHORT_SHA
-  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_WEB_IMAGE}:$SHORT_SHA
+  - id: push-api-image
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "${_DEPLOY_TARGET}" != "cloud-run" ]; then
+          echo "Skipping API image push because _DEPLOY_TARGET=${_DEPLOY_TARGET}."
+          exit 0
+        fi
+        docker push "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_API_IMAGE}:$BUILD_ID"
+
+  - id: push-web-image
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "${_DEPLOY_TARGET}" != "cloud-run" ]; then
+          echo "Skipping web image push because _DEPLOY_TARGET=${_DEPLOY_TARGET}."
+          exit 0
+        fi
+        docker push "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_WEB_IMAGE}:$BUILD_ID"
+
+  - id: deploy-api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "${_DEPLOY_TARGET}" != "cloud-run" ]; then
+          echo "Skipping API deploy because _DEPLOY_TARGET=${_DEPLOY_TARGET}."
+          exit 0
+        fi
+
+        gcloud run deploy "${_API_SERVICE}" \
+          --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_API_IMAGE}:$BUILD_ID" \
+          --region "${_REGION}" \
+          --platform managed \
+          --execution-environment=gen2 \
+          --cpu-boost \
+          --allow-unauthenticated \
+          --service-account "${_RUN_SERVICE_ACCOUNT}@$PROJECT_ID.iam.gserviceaccount.com" \
+          --memory "${_API_MEMORY}" \
+          --cpu "${_API_CPU}" \
+          --concurrency "${_API_CONCURRENCY}" \
+          --min-instances "${_API_MIN_INSTANCES}" \
+          --max-instances "${_API_MAX_INSTANCES}" \
+          --timeout "${_API_TIMEOUT}" \
+          --set-env-vars "RESONANCELAB_ENV=cloud,RESONANCELAB_MAX_UPLOAD_BYTES=${_API_MAX_UPLOAD_BYTES},RESONANCELAB_MAX_RECORDING_SECONDS=${_API_MAX_RECORDING_SECONDS}"
+
+  - id: deploy-web
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "${_DEPLOY_TARGET}" != "cloud-run" ]; then
+          echo "Skipping web deploy because _DEPLOY_TARGET=${_DEPLOY_TARGET}."
+          exit 0
+        fi
+
+        API_URL="https://${_API_SERVICE}-$PROJECT_NUMBER.${_REGION}.run.app"
+        gcloud run deploy "${_WEB_SERVICE}" \
+          --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_WEB_IMAGE}:$BUILD_ID" \
+          --region "${_REGION}" \
+          --platform managed \
+          --execution-environment=gen2 \
+          --cpu-boost \
+          --allow-unauthenticated \
+          --service-account "${_RUN_SERVICE_ACCOUNT}@$PROJECT_ID.iam.gserviceaccount.com" \
+          --memory "${_WEB_MEMORY}" \
+          --cpu "${_WEB_CPU}" \
+          --concurrency "${_WEB_CONCURRENCY}" \
+          --min-instances "${_WEB_MIN_INSTANCES}" \
+          --max-instances "${_WEB_MAX_INSTANCES}" \
+          --timeout "${_WEB_TIMEOUT}" \
+          --set-env-vars "PUBLIC_API_URL=$${API_URL},RESONANCELAB_ENV=cloud"
+
+  - id: update-api-cors
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "${_DEPLOY_TARGET}" != "cloud-run" ]; then
+          echo "Skipping API CORS update because _DEPLOY_TARGET=${_DEPLOY_TARGET}."
+          exit 0
+        fi
+
+        WEB_URL="$$(gcloud run services describe "${_WEB_SERVICE}" --region "${_REGION}" --format='value(status.url)')"
+        WEB_CANONICAL_URL="https://${_WEB_SERVICE}-$PROJECT_NUMBER.${_REGION}.run.app"
+        CORS_ORIGINS="$${WEB_URL}"
+        if [ "$${WEB_CANONICAL_URL}" != "$${WEB_URL}" ]; then
+          CORS_ORIGINS="$${CORS_ORIGINS},$${WEB_CANONICAL_URL}"
+        fi
+        if [ "${_EXTRA_CORS_ORIGINS}" != "none" ]; then
+          CORS_ORIGINS="$${CORS_ORIGINS},${_EXTRA_CORS_ORIGINS}"
+        fi
+
+        gcloud run services update "${_API_SERVICE}" \
+          --region "${_REGION}" \
+          --update-env-vars "^|^RESONANCELAB_CORS_ORIGINS=$${CORS_ORIGINS}"

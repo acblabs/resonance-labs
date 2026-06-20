@@ -11,10 +11,13 @@
     estimateFillLevel,
     exportCalibrationProfile,
     importCalibrationProfile,
+    normalizeCalibrationProfile,
     profileObservationCount,
     renameCalibrationProfile,
     withCalibrationAnchor,
-    withFreeAirReference
+    withFreeAirReference,
+    withoutCalibrationAnchor,
+    withoutFreeAirReference
   } from '$lib/calibration/calibration';
   import {
     deleteCalibrationProfile,
@@ -48,6 +51,9 @@
   let storageEstimate: CalibrationStorageEstimate | null = null;
   let calibrationEstimateCacheKey = '';
   let importInput: HTMLInputElement;
+  let displayProfile: CalibrationProfile | null = null;
+  let displayAnchors: Partial<Record<CalibrationAnchorKind, CalibrationAnchor>> = {};
+  let displayFreeAirReference: CalibrationReference | null = null;
 
   onMount(loadProfiles);
 
@@ -90,7 +96,7 @@
   }
 
   function setProfiles(profiles: CalibrationProfile[], activeId: string): void {
-    calibrationProfiles = profiles;
+    calibrationProfiles = profiles.map((profile) => normalizeCalibrationProfile(profile));
     selectedProfileId = profiles.some((profile) => profile.id === activeId)
       ? activeId
       : profiles[0]?.id || '';
@@ -172,14 +178,14 @@
   }
 
   async function saveCurrentAsAnchor(kind: CalibrationAnchorKind): Promise<void> {
-    if (!selectedProfile || !result) {
+    if (!displayProfile || !result) {
       return;
     }
     savingCalibration = true;
     calibrationError = '';
     try {
       const anchor = createCalibrationAnchor(kind, result);
-      const profile = withCalibrationAnchor(selectedProfile, anchor);
+      const profile = withCalibrationAnchor(displayProfile, anchor);
       await saveCalibrationProfile(profile);
       replaceProfile(profile);
       await refreshStorageEstimate();
@@ -192,18 +198,68 @@
   }
 
   async function saveCurrentAsFreeAirReference(): Promise<void> {
-    if (!selectedProfile || !result) {
+    if (!displayProfile || !result) {
       return;
     }
     savingCalibration = true;
     calibrationError = '';
     try {
       const reference = createFreeAirReference(result);
-      const profile = withFreeAirReference(selectedProfile, reference);
+      const profile = withFreeAirReference(displayProfile, reference);
       await saveCalibrationProfile(profile);
       replaceProfile(profile);
       await refreshStorageEstimate();
       calibrationStatus = `${FREE_AIR_REFERENCE_LABEL} repeat saved (n=${profile.freeAirReference?.sampleCount ?? 1})`;
+    } catch (referenceError) {
+      calibrationError =
+        referenceError instanceof Error ? referenceError.message : String(referenceError);
+    } finally {
+      savingCalibration = false;
+    }
+  }
+
+  async function clearAnchor(kind: CalibrationAnchorKind): Promise<void> {
+    if (!displayProfile || !displayAnchors[kind]) {
+      return;
+    }
+    const anchor = CALIBRATION_ANCHORS.find((candidate) => candidate.kind === kind);
+    const confirmed = window.confirm(`Clear all ${anchor?.label ?? kind} calibration samples?`);
+    if (!confirmed) {
+      return;
+    }
+
+    savingCalibration = true;
+    calibrationError = '';
+    try {
+      const profile = withoutCalibrationAnchor(displayProfile, kind);
+      await saveCalibrationProfile(profile);
+      replaceProfile(profile);
+      await refreshStorageEstimate();
+      calibrationStatus = `${anchor?.label ?? kind} anchor cleared`;
+    } catch (anchorError) {
+      calibrationError = anchorError instanceof Error ? anchorError.message : String(anchorError);
+    } finally {
+      savingCalibration = false;
+    }
+  }
+
+  async function clearFreeAirReference(): Promise<void> {
+    if (!displayProfile || !displayFreeAirReference) {
+      return;
+    }
+    const confirmed = window.confirm(`Clear all ${FREE_AIR_REFERENCE_LABEL} samples?`);
+    if (!confirmed) {
+      return;
+    }
+
+    savingCalibration = true;
+    calibrationError = '';
+    try {
+      const profile = withoutFreeAirReference(displayProfile);
+      await saveCalibrationProfile(profile);
+      replaceProfile(profile);
+      await refreshStorageEstimate();
+      calibrationStatus = `${FREE_AIR_REFERENCE_LABEL} reference cleared`;
     } catch (referenceError) {
       calibrationError =
         referenceError instanceof Error ? referenceError.message : String(referenceError);
@@ -268,20 +324,17 @@
     return `${Math.round(value)} Hz`;
   }
 
-  function anchorFor(kind: CalibrationAnchorKind): CalibrationAnchor | null {
-    return selectedProfile?.anchors[kind] ?? null;
-  }
-
-  function freeAirReference(): CalibrationReference | null {
-    return selectedProfile?.freeAirReference ?? null;
-  }
-
-  function formatAnchorStatus(kind: CalibrationAnchorKind): string {
-    const anchor = anchorFor(kind);
-    if (!anchor) {
-      return 'Open';
+  function formatObservationStatus(
+    observation: CalibrationAnchor | CalibrationReference | null
+  ): string {
+    if (!observation) {
+      return 'Not saved';
     }
-    return formatHz(anchor.featureVector.summary.primaryPeakHz);
+    const peakHz = observation.featureVector.summary.primaryPeakHz;
+    if (peakHz === null || peakHz === undefined || !Number.isFinite(peakHz)) {
+      return 'Saved';
+    }
+    return `Peak ${formatHz(peakHz)}`;
   }
 
   function formatRepeatCount(count: number | null | undefined): string {
@@ -309,19 +362,22 @@
 
   function currentEstimateCacheKey(): string {
     const resultKey = result?.analysis_id ?? 'no-result';
-    const profileKey = selectedProfile
-      ? `${selectedProfile.id}:${selectedProfile.updatedAt}:${selectedProfile.schemaVersion}`
+    const profileKey = displayProfile
+      ? `${displayProfile.id}:${displayProfile.updatedAt}:${displayProfile.schemaVersion}`
       : 'no-profile';
     return `${resultKey}|${profileKey}`;
   }
 
-  $: selectedAnchorCount = selectedProfile ? anchorCount(selectedProfile) : 0;
-  $: selectedObservationCount = selectedProfile ? profileObservationCount(selectedProfile) : 0;
+  $: displayProfile = selectedProfile ? normalizeCalibrationProfile(selectedProfile) : null;
+  $: displayAnchors = displayProfile?.anchors ?? {};
+  $: displayFreeAirReference = displayProfile?.freeAirReference ?? null;
+  $: selectedAnchorCount = displayProfile ? anchorCount(displayProfile) : 0;
+  $: selectedObservationCount = displayProfile ? profileObservationCount(displayProfile) : 0;
   $: {
     const cacheKey = currentEstimateCacheKey();
     if (cacheKey !== calibrationEstimateCacheKey) {
       calibrationEstimateCacheKey = cacheKey;
-      calibrationEstimate = result && selectedProfile ? estimateFillLevel(result, selectedProfile) : null;
+      calibrationEstimate = result && displayProfile ? estimateFillLevel(result, displayProfile) : null;
     }
   }
 </script>
@@ -411,29 +467,51 @@
 
   <div class="anchor-grid">
     {#each CALIBRATION_ANCHORS as anchor}
+      {@const savedAnchor = displayAnchors[anchor.kind] ?? null}
+      <div class:anchor-saved={Boolean(savedAnchor)} class="anchor-card">
+        <span>{anchor.label} anchor</span>
+        <button
+          class="anchor-save-button"
+          type="button"
+          disabled={!selectedProfile || !result || savingCalibration}
+          on:click={() => saveCurrentAsAnchor(anchor.kind)}
+        >
+          {savedAnchor ? `Save ${anchor.label} repeat` : `Save ${anchor.label}`}
+        </button>
+        <em>{formatObservationStatus(savedAnchor)} - {formatRepeatCount(savedAnchor?.sampleCount)}</em>
+        <button
+          class="anchor-clear-button"
+          type="button"
+          disabled={!selectedProfile || !savedAnchor || savingCalibration}
+          on:click={() => clearAnchor(anchor.kind)}
+        >
+          Clear
+        </button>
+      </div>
+    {/each}
+    <div class:anchor-saved={Boolean(displayFreeAirReference)} class="anchor-card reference-button">
+      <span>{FREE_AIR_REFERENCE_LABEL} reference</span>
       <button
-        class="anchor-button"
-        class:anchor-saved={Boolean(anchorFor(anchor.kind))}
+        class="anchor-save-button"
         type="button"
         disabled={!selectedProfile || !result || savingCalibration}
-        on:click={() => saveCurrentAsAnchor(anchor.kind)}
+        on:click={saveCurrentAsFreeAirReference}
       >
-        <span>{anchor.label}</span>
-        <strong>{formatAnchorStatus(anchor.kind)}</strong>
-        <em>{formatRepeatCount(anchorFor(anchor.kind)?.sampleCount)}</em>
+        {displayFreeAirReference ? `Save ${FREE_AIR_REFERENCE_LABEL} repeat` : `Save ${FREE_AIR_REFERENCE_LABEL}`}
       </button>
-    {/each}
-    <button
-      class="anchor-button reference-button"
-      class:anchor-saved={Boolean(freeAirReference())}
-      type="button"
-      disabled={!selectedProfile || !result || savingCalibration}
-      on:click={saveCurrentAsFreeAirReference}
-    >
-      <span>{FREE_AIR_REFERENCE_LABEL}</span>
-      <strong>{formatHz(freeAirReference()?.featureVector.summary.primaryPeakHz)}</strong>
-      <em>{formatRepeatCount(freeAirReference()?.sampleCount)}</em>
-    </button>
+      <em>
+        {formatObservationStatus(displayFreeAirReference)} -
+        {formatRepeatCount(displayFreeAirReference?.sampleCount)}
+      </em>
+      <button
+        class="anchor-clear-button"
+        type="button"
+        disabled={!selectedProfile || !displayFreeAirReference || savingCalibration}
+        on:click={clearFreeAirReference}
+      >
+        Clear
+      </button>
+    </div>
   </div>
 
   <span class="status-line">{calibrationStatus}</span>

@@ -127,12 +127,19 @@ export type AnchorDistance = {
   distance: number;
 };
 
+export type CalibrationReferenceMatch = {
+  kind: CalibrationReferenceKind;
+  label: string;
+  distance: number;
+};
+
 export type CalibrationEstimate = {
   status: 'ready' | 'incomplete';
   fillPercent: number | null;
   confidence: number;
   confidenceLabel: 'high' | 'medium' | 'low' | 'none';
   nearestAnchor: AnchorDistance | null;
+  referenceMatch: CalibrationReferenceMatch | null;
   anchorDistances: AnchorDistance[];
   segment: {
     from: CalibrationAnchorKind;

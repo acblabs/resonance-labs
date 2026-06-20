@@ -13,8 +13,10 @@ from resonancelab.ml import (
     FEATURE_FORMAT_VERSION,
     ManifestValidationError,
     extract_feature_vector_from_mapping,
+    finalize_phase4_dataset,
     load_manifest,
     make_group_holdout_split,
+    make_record_fragment,
     run_phase4_benchmark,
     train_phase4_baseline,
 )
@@ -270,6 +272,153 @@ class Phase4MlTests(unittest.TestCase):
 
             with self.assertRaises(ManifestValidationError):
                 load_manifest(manifest_path)
+
+    def test_feature_extraction_can_write_derived_manifest(self) -> None:
+        from scripts.extract_phase4_features import _write_feature_manifest
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_manifest_path = root / "input" / "manifest.json"
+            source_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            source_manifest_path.write_text(
+                json.dumps(
+                    _manifest_payload(
+                        root,
+                        [
+                            {
+                                **_record("record-001", "s1", 50.0, "features/old.json"),
+                                "features_path": None,
+                                "analysis_path": "analysis/record-001.analysis.json",
+                            }
+                        ],
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            generated_feature_path = root / "output" / "features" / "record-001.features.json"
+            output_manifest_path = root / "output" / "manifest.features.json"
+
+            _write_feature_manifest(
+                source_manifest_path,
+                output_manifest_path,
+                {"record-001": generated_feature_path},
+            )
+
+            derived = json.loads(output_manifest_path.read_text(encoding="utf-8"))
+
+        record = derived["records"][0]
+        self.assertEqual(record["features_path"], "features/record-001.features.json")
+        self.assertEqual(record["analysis_path"], "analysis/record-001.analysis.json")
+
+    def test_finalize_phase4_dataset_builds_snapshot_from_inbox_fragments(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inbox = root / "inbox"
+            session_dir = inbox / "session-001"
+            (session_dir / "audio").mkdir(parents=True)
+            (session_dir / "analysis").mkdir(parents=True)
+            (session_dir / "records").mkdir(parents=True)
+            (session_dir / "audio" / "record-001.wav").write_bytes(b"fake wav")
+            (session_dir / "analysis" / "record-001.analysis.json").write_text(
+                json.dumps(_analysis_payload_with_mel_rows(20)),
+                encoding="utf-8",
+            )
+            fragment = make_record_fragment(
+                record={
+                    **_record(
+                        "record-001",
+                        "session-001",
+                        50.0,
+                        "features/unused.json",
+                    ),
+                    "features_path": None,
+                    "audio_path": "audio/session-001/record-001.wav",
+                    "analysis_path": "analysis/session-001/record-001.analysis.json",
+                    "probe": {
+                        "signal_type": "log_chirp",
+                        "start_hz": 500,
+                        "end_hz": 10000,
+                        "duration_ms": 500,
+                        "pre_roll_ms": 250,
+                        "post_roll_ms": 1000,
+                        "amplitude": 0.35,
+                        "fade_ms": 10,
+                    },
+                },
+                source_paths={
+                    "audio": "session-001/audio/record-001.wav",
+                    "analysis": "session-001/analysis/record-001.analysis.json",
+                },
+                created_at="2026-06-19T00:00:00Z",
+            )
+            (session_dir / "records" / "record-001.record.json").write_text(
+                json.dumps(fragment, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            result = finalize_phase4_dataset(
+                inbox_dir=inbox,
+                snapshot_dir=root / "datasets" / "2026-06-19",
+                dataset_id="phase4-test-snapshot",
+                created_at="2026-06-19T00:00:00Z",
+            )
+            manifest = load_manifest(result.manifest_path)
+
+            self.assertEqual(result.record_count, 1)
+            self.assertEqual(manifest.records[0].audio_path, "audio/session-001/record-001.wav")
+            self.assertEqual(
+                manifest.records[0].analysis_path,
+                "analysis/session-001/record-001.analysis.json",
+            )
+            self.assertTrue((result.manifest_path.parent / manifest.records[0].audio_path).exists())
+            self.assertTrue(
+                (result.manifest_path.parent / manifest.records[0].analysis_path).exists()
+            )
+
+    def test_finalize_derives_fill_bucket_from_snapshot_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inbox = root / "inbox"
+            session_dir = inbox / "session-001"
+            (session_dir / "features").mkdir(parents=True)
+            (session_dir / "records").mkdir(parents=True)
+            feature_name = "record-002.features.json"
+            _write_feature_file(
+                session_dir / "features" / feature_name,
+                {"peak_1_log_hz": 40.0, "transfer_750hz_mean_db": 3.0},
+            )
+            record = _record(
+                "record-002",
+                "session-001",
+                40.0,
+                f"features/session-001/{feature_name}",
+            )
+            record["label"]["fill_bucket"] = "50_percent"
+            fragment = make_record_fragment(
+                record=record,
+                source_paths={"features": f"session-001/features/{feature_name}"},
+                created_at="2026-06-19T00:00:00Z",
+            )
+            (session_dir / "records" / "record-002.record.json").write_text(
+                json.dumps(fragment, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            result = finalize_phase4_dataset(
+                inbox_dir=inbox,
+                snapshot_dir=root / "datasets" / "custom-buckets",
+                dataset_id="phase4-custom-bucket-snapshot",
+                buckets_percent=(0.0, 33.0, 66.0, 100.0),
+                created_at="2026-06-19T00:00:00Z",
+            )
+            manifest_payload = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+            manifest = load_manifest(result.manifest_path)
+
+            self.assertNotIn("fill_bucket", manifest_payload["records"][0]["label"])
+            self.assertEqual(manifest.records[0].label.fill_bucket, "33_percent")
 
 
 def _write_synthetic_manifest(

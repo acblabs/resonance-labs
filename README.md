@@ -38,7 +38,8 @@ Phase 3 calibration demo implemented:
 - Local profile list with create, rename, delete, export, and import actions.
 - Feature-vector extraction from Phase 2 DSP output.
 - Piecewise feature-distance interpolation between calibration anchors.
-- Profile-relative fill estimate, heuristic confidence label, nearest-anchor reference, and warnings.
+- Profile-relative fill estimate, heuristic confidence label, reference-match display, and warnings.
+- Free-air reference matching reports no-glass probes instead of forcing a glass fill estimate.
 - Weighted geometric confidence aggregation with explicit caps for hard quality and compatibility failures.
 - Probe/capture compatibility checks for sample rate, browser family, capture path, audio processing, and probe settings.
 - Calibration workflow split into a dedicated Svelte component to keep the probe screen maintainable.
@@ -52,6 +53,10 @@ Phase 4 dataset and baseline tooling implemented:
 - Offline scikit-learn baseline trainer for fill-percent regression and fill-bucket classification.
 - Baseline artifact export with `joblib`, feature schema, dropped-feature audit, quality audit, metrics JSON, and generated model card.
 - Compiled Phase 4 benchmark command for session, glass, device, and browser holdout regimes.
+- Private capture endpoint and operator-only web mode for staging labeled captures into a GCS inbox.
+- Capture records enforce server raw-audio policy, validate manifest fragments before publishing, and
+  defer bucket/quality inclusion policy to finalization and training.
+- Manifest finalization tooling that turns capture inbox fragments into immutable dataset snapshots.
 - Recording protocol, manifest JSON Schema, baseline workflow docs, benchmark result area, and evaluation notebook skeleton.
 
 Still manual:
@@ -97,12 +102,14 @@ Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and kee
 Phase 4 training is offline. Keep private raw audio and feature files out of git unless explicitly approved. The checked-in example manifest documents schema shape only and is not large enough to train.
 
 ```powershell
-python scripts/extract_phase4_features.py --manifest path/to/private_manifest.json --output-dir path/to/private_features
-python scripts/train_baseline.py --manifest path/to/private_manifest.json --group-by session_id --output-dir models/baseline_sklearn
-python scripts/run_phase4_benchmark.py --manifest path/to/private_manifest.json --output-dir experiments/results/phase4_benchmark
+python scripts/extract_phase4_features.py --manifest path/to/private_manifest.json --output-dir path/to/private_features --manifest-output path/to/private_manifest.features.json
+python scripts/train_baseline.py --manifest path/to/private_manifest.features.json --group-by session_id --output-dir models/baseline_sklearn
+python scripts/run_phase4_benchmark.py --manifest path/to/private_manifest.features.json --output-dir experiments/results/phase4_benchmark
 ```
 
 The trainer runs repeated grouped holdouts by default and exports the first split's model. Use `--group-by glass_id`, `--group-by device_id`, and `--group-by browser_id` for separate generalization reports. See `docs/glass_recording_protocol.md`, `docs/phase4_baseline.md`, and `docs/schemas/phase4_dataset_manifest.schema.json`.
+
+Private GCP runs can use `cloudbuild.phase4.yaml` to finalize a private capture inbox into an immutable snapshot, or train from an existing snapshot, then upload generated features, model artifacts, and reports back to private GCS without committing them. Do not train from a prefix that is receiving live captures.
 
 ## Docker Compose
 
@@ -161,7 +168,9 @@ Use `[skip docs]` in a commit message only when a docs update would be noise. Th
 
 ## Cloud Build
 
-`cloudbuild.yaml` is the GCP CI/build entry point. It runs project hygiene checks, API tests, SvelteKit checks/builds, and builds the API and web container images for Artifact Registry.
+`cloudbuild.yaml` is the GCP CI/build entry point. It runs project hygiene checks, API tests, SvelteKit checks/builds, and builds the API and web container images. By default it does not push or deploy; a main-branch Cloud Build trigger can set `_DEPLOY_TARGET=cloud-run` to push images, deploy `resonancelab-api` and `resonancelab-web` to second-generation Cloud Run services with startup CPU boost, wire `PUBLIC_API_URL`, and update API CORS.
+
+Keep project IDs, service account details, and deployment-specific substitutions in GCP trigger settings or ignored local files, not in the public repo. See `docs/gcp_cloud_run.md`.
 
 ## Validation
 

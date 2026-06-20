@@ -59,6 +59,8 @@ For project context, repository layout details, and phase gates, refer to the [i
 ### 1.4 State Management, IndexedDB, & Safety Guardrails
 *   **Local Calibration Profiles**: Persist calibration anchors and profiles locally in IndexedDB to avoid server-side state.
 *   **Storage Etiquette**: Store derived DSP features by default. Request explicit user opt-in before storing raw audio blobs to prevent quota exhaustion.
+*   **Calibration Actions**: Anchor controls should use explicit command labels such as "Save Empty" or "Save Full" rather than relying on status-only anchor cards, and every save target needs a clear/reset path for accidental captures.
+*   **Free-Air Controls**: Treat a close match to the saved free-air reference as a no-glass/reference-match result, not as a nearest-glass-anchor fill estimate.
 *   **Acoustic Safety**: Protect users and equipment by enforcing:
     *   Volume limits (e.g., capping the amplitude multiplier to `0.35` by default).
     *   Short probe durations (e.g., maximum chirp/sweep duration of 500-1000ms).
@@ -95,6 +97,7 @@ For project context, repository layout details, and phase gates, refer to the [i
 | Action | Recommended Practice | Prohibited Practice |
 | :--- | :--- | :--- |
 | **Dependency Management** | Use venv + `requirements.txt` / `requirements-dev.txt` in the root. | Running global `pip install` or introducing unapproved managers. |
+| **Docker Workspaces** | Copy workspace package sources into their package paths, such as `apps/web`, before running workspace scripts in container builds. | Flattening a workspace package into the container root before running `npm --workspace`. |
 | **Audio Capture** | AudioWorklet PCM -> browser-side WAV encoding. | MediaRecorder WebM/Opus by default (lossy). |
 | **ML Inference** | Ephemeral processing with scikit-learn/XGBoost baselines. | Heavy deep learning models in Phase 1 API images. |
 | **Phase 4 Training** | Use `requirements-ml.txt`, private manifests, leakage-aware group splits, and generated model cards. | Committing private raw audio or evaluating with random probe-level splits. |

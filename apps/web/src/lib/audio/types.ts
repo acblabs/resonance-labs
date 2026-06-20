@@ -1,7 +1,11 @@
-export type CapturePath = 'audio_worklet' | 'script_processor' | 'media_recorder' | 'unknown';
+export type CapturePath =
+  | "audio_worklet"
+  | "script_processor"
+  | "media_recorder"
+  | "unknown";
 
 export type ProbeConfig = {
-  signal_type: 'log_chirp';
+  signal_type: "log_chirp";
   start_hz: number;
   end_hz: number;
   duration_ms: number;
@@ -62,7 +66,7 @@ export type SpectralFeatures = {
 };
 
 export type SpectrogramGrid = {
-  kind: 'stft' | 'mel';
+  kind: "stft" | "mel";
   times_seconds: number[];
   frequency_bins_hz: number[];
   magnitude_db: number[][];
@@ -84,7 +88,7 @@ export type PeakFeature = {
 };
 
 export type DecayFeature = {
-  method: 'rms_envelope_log_linear';
+  method: "rms_envelope_log_linear";
   decay_rate_per_second: number | null;
   rt60_seconds: number | null;
   fit_r2: number | null;
@@ -106,7 +110,7 @@ export type DspAnalysis = {
 
 export type AnalysisResponse = {
   analysis_id: string;
-  status: 'ok';
+  status: "ok";
   audio: {
     content_type: string;
     filename: string | null;
@@ -123,7 +127,7 @@ export type AnalysisResponse = {
   };
   probe: ProbeMetadata;
   alignment: {
-    method: 'matched_filter_log_chirp';
+    method: "matched_filter_log_chirp";
     confidence: number;
     estimated_latency_ms: number | null;
     detected_start_seconds: number | null;
@@ -132,4 +136,44 @@ export type AnalysisResponse = {
   };
   dsp: DspAnalysis;
   warnings: string[];
+};
+
+export type DatasetCaptureLabel = {
+  fill_percent?: number;
+  fill_mass_g?: number;
+  vessel_empty_mass_g?: number;
+  vessel_full_mass_g?: number;
+  vessel_current_mass_g?: number;
+};
+
+export type DatasetCaptureContext = {
+  session_id: string;
+  glass_id: string;
+  device_id: string;
+  browser_id: string;
+  room_id: string;
+  operator_id?: string;
+  volume_setting?: string;
+  material?: string;
+  geometry?: string;
+  notes?: string;
+};
+
+export type DatasetCaptureRequest = {
+  label: DatasetCaptureLabel;
+  context: DatasetCaptureContext;
+  store_audio: boolean;
+  notes?: string;
+};
+
+export type DatasetCaptureResponse = {
+  record_id: string;
+  status: "stored";
+  inbox_prefix: string;
+  stored_paths: {
+    inbox_record_path: string;
+    audio_path: string | null;
+    analysis_path: string;
+  };
+  analysis: AnalysisResponse;
 };

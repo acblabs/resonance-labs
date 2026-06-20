@@ -95,6 +95,29 @@ export function withFreeAirReference(
   };
 }
 
+export function withoutCalibrationAnchor(
+  profile: CalibrationProfile,
+  kind: CalibrationAnchorKind
+): CalibrationProfile {
+  const normalized = normalizeCalibrationProfile(profile);
+  const anchors = { ...normalized.anchors };
+  delete anchors[kind];
+  return {
+    ...normalized,
+    anchors,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+export function withoutFreeAirReference(profile: CalibrationProfile): CalibrationProfile {
+  const normalized = normalizeCalibrationProfile(profile);
+  return {
+    ...normalized,
+    freeAirReference: null,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 export function createCalibrationAnchor(
   kind: CalibrationAnchorKind,
   analysis: CalibrationAnalysisSource
@@ -254,6 +277,7 @@ export function estimateFillLevel(
 
   let freeAirDistance: number | null = null;
   let freeAirTooClose = false;
+  let referenceMatch: CalibrationEstimate['referenceMatch'] = null;
   if (normalizedProfile.freeAirReference) {
     const freeAirPoint = projectFeatureVector(
       normalizedProfile.freeAirReference.featureVector,
@@ -263,7 +287,12 @@ export function estimateFillLevel(
     const nearestAnchorDistance = nearestAnchor?.distance ?? Number.POSITIVE_INFINITY;
     if (freeAirDistance < nearestAnchorDistance * 0.85) {
       freeAirTooClose = true;
-      warnings.push('Current probe is closer to the free-air reference than to calibrated anchors.');
+      referenceMatch = {
+        kind: 'free_air',
+        label: FREE_AIR_REFERENCE_LABEL,
+        distance: freeAirDistance
+      };
+      warnings.push('Current probe matches the free-air reference more closely than calibrated glass anchors.');
     }
   } else {
     warnings.push('No free-air reference captured; direct-path and room response are uncharacterized.');
@@ -286,10 +315,11 @@ export function estimateFillLevel(
 
   return {
     status: 'ready',
-    fillPercent: clamp(fillPercent, 0, 100),
-    confidence,
-    confidenceLabel: confidenceLabel(confidence),
-    nearestAnchor,
+    fillPercent: referenceMatch ? null : clamp(fillPercent, 0, 100),
+    confidence: referenceMatch ? 0 : confidence,
+    confidenceLabel: referenceMatch ? 'none' : confidenceLabel(confidence),
+    nearestAnchor: referenceMatch ? null : nearestAnchor,
+    referenceMatch,
     anchorDistances,
     segment: {
       from: segment.from,
@@ -1100,6 +1130,7 @@ function incompleteEstimate(warnings: string[]): CalibrationEstimate {
     confidence: 0,
     confidenceLabel: 'none',
     nearestAnchor: null,
+    referenceMatch: null,
     anchorDistances: [],
     segment: null,
     comparableFeatureCount: 0,

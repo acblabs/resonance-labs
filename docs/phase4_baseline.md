@@ -32,11 +32,14 @@ changing it changes class labels, confusion matrices, within-one-bucket metrics,
 Feature files can be produced with:
 
 ```powershell
-python scripts/extract_phase4_features.py --manifest path/to/private_manifest.json --output-dir path/to/private_features
+python scripts/extract_phase4_features.py --manifest path/to/private_manifest.json --output-dir path/to/private_features --manifest-output path/to/private_manifest.features.json
 ```
 
 For private datasets, keep raw audio and extracted feature files outside git unless explicitly
 approved.
+
+Use the derived manifest from `--manifest-output` for training when the source manifest contains raw
+`audio_path` records. The trainer can consume `features_path` and `analysis_path` records directly.
 
 The checked-in `data/manifests/phase4_manifest.example.json` is schema documentation only. It points
 at placeholder private paths and is intentionally too small to train.
@@ -110,6 +113,8 @@ It runs the standard `session_id`, `glass_id`, `device_id`, and `browser_id` reg
 artifacts, and emits `benchmark_report.json` plus `benchmark_report.md`. Session holdout is
 same-glass supervised repeatability; glass/device/browser holdouts are separate generalization
 claims.
+
+For private GCP storage and private Cloud Build execution, see `docs/phase4_private_gcp_workflow.md`.
 
 ## Release Gates
 

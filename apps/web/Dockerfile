@@ -6,7 +6,7 @@ COPY package.json package-lock.json ./
 COPY apps/web/package.json ./apps/web/package.json
 RUN npm ci --workspace @resonancelab/web --include-workspace-root=false
 
-COPY apps/web ./
+COPY apps/web ./apps/web
 
 RUN npm --workspace @resonancelab/web run build
 

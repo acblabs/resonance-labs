@@ -1,4 +1,4 @@
-.DS_Store
+.git/
 .venv/
 __pycache__/
 *.py[cod]
@@ -12,8 +12,6 @@ dist/
 .env.*
 !.env.example
 .run/
-
-# Local cloud/deployment state and credentials.
 .gcp/
 .gcloud/
 .cloudbuild/
@@ -23,8 +21,6 @@ gcp.env
 service-account*.json
 *-service-account.json
 *-sa-key.json
-
-# Private ResonanceLab datasets and generated model artifacts.
 data/private/
 data/raw/
 data/features/

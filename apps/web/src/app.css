@@ -1,7 +1,13 @@
 :root {
   color-scheme: dark;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   background: #101614;
   color: #e7f0ea;
   --surface: #151c1a;
@@ -281,6 +287,13 @@ button {
   padding-top: 1rem;
 }
 
+.dataset-capture-block {
+  display: grid;
+  gap: 0.8rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
 .section-heading {
   display: flex;
   align-items: center;
@@ -317,6 +330,20 @@ button {
   display: none;
 }
 
+.checkbox-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.checkbox-field input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+}
+
 .storage-line {
   color: var(--muted);
   font-size: 0.82rem;
@@ -339,49 +366,75 @@ button {
   gap: 0.5rem;
 }
 
-.anchor-button {
+.anchor-card {
   display: grid;
-  gap: 0.15rem;
-  min-height: 4rem;
+  gap: 0.35rem;
+  min-height: 5.8rem;
   border-radius: 7px;
   border: 1px solid var(--line);
   color: var(--text);
   background: var(--surface-2);
   padding: 0.6rem;
   text-align: left;
-  cursor: pointer;
 }
 
-.anchor-button:hover,
-.anchor-button:focus-visible {
-  background: var(--surface-3);
+.anchor-card.anchor-saved {
+  border-color: rgba(73, 209, 149, 0.52);
+  background: rgba(73, 209, 149, 0.1);
+}
+
+.anchor-card span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.anchor-card em {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-style: normal;
+}
+
+.anchor-save-button {
+  min-height: 2rem;
+  border-radius: 5px;
+  color: #06130d;
+  background: var(--accent);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.anchor-save-button:hover,
+.anchor-save-button:focus-visible {
+  background: #6ee3ae;
   outline: none;
 }
 
-.anchor-button:disabled {
+.anchor-save-button:disabled {
   cursor: not-allowed;
   color: #82918b;
   background: #1b2421;
 }
 
-.anchor-button.anchor-saved {
-  border-color: rgba(73, 209, 149, 0.52);
-  background: rgba(73, 209, 149, 0.1);
-}
-
-.anchor-button span {
+.anchor-clear-button {
+  min-height: 1.8rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
   color: var(--muted);
-  font-size: 0.78rem;
+  background: transparent;
+  cursor: pointer;
 }
 
-.anchor-button strong {
-  font-size: 0.98rem;
+.anchor-clear-button:hover,
+.anchor-clear-button:focus-visible {
+  color: var(--text);
+  background: var(--surface-3);
+  outline: none;
 }
 
-.anchor-button em {
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-style: normal;
+.anchor-clear-button:disabled {
+  cursor: not-allowed;
+  color: #82918b;
+  background: transparent;
 }
 
 .reference-button {

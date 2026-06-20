@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -26,26 +27,53 @@ def main() -> int:
         required=True,
         help="Directory where <record-id>.features.json files will be written.",
     )
+    parser.add_argument(
+        "--manifest-output",
+        help=(
+            "Optional path for a derived manifest whose extracted active records point to the "
+            "generated feature JSON files."
+        ),
+    )
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
 
+    source_manifest_path = Path(args.manifest)
     manifest = load_manifest(args.manifest)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     written = []
     skipped = []
+    feature_paths_by_record_id: dict[str, Path] = {}
     for record in manifest.active_records():
         output_path = output_dir / f"{record.record_id}.features.json"
         if output_path.exists() and not args.overwrite:
             skipped.append({"record_id": record.record_id, "reason": "feature file exists"})
+            feature_paths_by_record_id[record.record_id] = output_path
             continue
 
         feature_vector = _extract_record_features(manifest, record)
         write_feature_vector(output_path, feature_vector)
         written.append({"record_id": record.record_id, "path": str(output_path)})
+        feature_paths_by_record_id[record.record_id] = output_path
 
-    print(json.dumps({"written": written, "skipped": skipped}, indent=2, sort_keys=True))
+    manifest_output = None
+    if args.manifest_output:
+        manifest_output_path = Path(args.manifest_output)
+        _write_feature_manifest(
+            source_manifest_path,
+            manifest_output_path,
+            feature_paths_by_record_id,
+        )
+        manifest_output = str(manifest_output_path)
+
+    print(
+        json.dumps(
+            {"written": written, "skipped": skipped, "manifest_output": manifest_output},
+            indent=2,
+            sort_keys=True,
+        )
+    )
     return 0
 
 
@@ -173,6 +201,36 @@ def _analysis_warnings(signal_to_noise_db: float | None, alignment_confidence: f
     elif signal_to_noise_db < 12.0:
         warnings.append("Signal-to-noise ratio is below the 12 dB Phase 4 quality threshold.")
     return warnings
+
+
+def _write_feature_manifest(
+    source_manifest_path: Path,
+    output_manifest_path: Path,
+    feature_paths_by_record_id: dict[str, Path],
+) -> None:
+    payload = json.loads(source_manifest_path.read_text(encoding="utf-8"))
+    records = payload.get("records", [])
+    if not isinstance(records, list):
+        raise ValueError("manifest records must be a list.")
+
+    output_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    output_parent = output_manifest_path.resolve().parent
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        feature_path = feature_paths_by_record_id.get(str(record.get("id", "")))
+        if feature_path is None:
+            continue
+        record["features_path"] = _relative_posix_path(feature_path.resolve(), output_parent)
+
+    output_manifest_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _relative_posix_path(path: Path, base: Path) -> str:
+    return Path(os.path.relpath(path, start=base)).as_posix()
 
 
 if __name__ == "__main__":

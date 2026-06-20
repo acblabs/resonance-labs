@@ -18,7 +18,7 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - Browser result display with duration, sample rate, alignment confidence, SNR, peak frequency, RT60 proxy, upload size, capture path, and warnings.
 - Canvas waveform display for captured probe audio.
 - Docker Compose development stack for web and API.
-- Cloud Build configuration for GCP checks and container image builds.
+- Cloud Build configuration for GCP checks, container image builds, and opt-in Cloud Run deploys through private trigger substitutions.
 - Local Git hooks for README, CHANGELOG, and SKILL.md freshness checks.
 - Pre-commit enforcement that requires `FEATURES.md` to be updated in every commit.
 - Commit-message `[skip docs]` escape hatch for low-signal documentation updates.
@@ -29,6 +29,7 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - Root-level `python -m pytest` and `python -m ruff check .` developer validation.
 - Vectorized NumPy WAV decoding for Phase 1 PCM uploads.
 - Slimmer web runtime container with production-only Node dependencies.
+- Workspace-correct web Docker build path for Cloud Build image builds.
 
 ## Current Phase 2 Features
 
@@ -59,10 +60,13 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - Anchor records storing extracted DSP feature vectors, probe settings, capture signatures, quality signals, and warnings.
 - Canonical capture signatures for sample rate, capture path, browser family, and reported audio processing.
 - Feature-distance interpolation over the empty-to-50% and 50%-to-full calibration segments.
-- Profile-relative fill estimate with confidence label, nearest-anchor reference, and global-mean/nearest-anchor baselines.
+- Profile-relative fill estimate with confidence label, reference-match display, and global-mean/nearest-anchor baselines.
+- Free-air reference matching that suppresses fill estimates when a probe is closer to the no-glass reference than to calibrated glass anchors.
 - Weighted geometric confidence aggregation with hard caps for weak alignment, probe mismatch, capture mismatch, free-air dominance, too few comparable features, and close anchor spacing.
 - Calibration uncertainty penalties for missing anchors, low SNR, weak chirp alignment, mismatched probe settings, sample-rate/capture mismatch, missing free-air reference, unstable repeats, and close anchor spacing.
-- Browser UI display of fill estimate, confidence, nearest anchor, anchor count, repeat count, storage usage, and calibration warnings.
+- Browser UI display of fill estimate, confidence, reference match, anchor count, repeat count, storage usage, and calibration warnings.
+- Explicit save controls for storing the current probe as Empty, 50%, Full, or Free air calibration samples.
+- Per-anchor and free-air clearing controls to recover from accidental calibration saves.
 - Unit tests for calibration feature extraction, incomplete profiles, interpolation behavior, baseline beating, repeat aggregation, capture mismatch, free-air references, import/export, and low-quality probe confidence.
 - Dedicated calibration manager component separated from the main probe/visualization component.
 - Probe uploads keep calibration profile IDs and anchor vectors local to the browser.
@@ -73,6 +77,7 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - Public JSON Schema for Phase 4 dataset manifests.
 - Glass recording protocol with mass-based fill labeling, repeated captures, free-air references, and quality rejection rules.
 - Canonical Python feature extraction from saved API analysis JSON or raw PCM WAV records.
+- Optional derived Phase 4 manifest generation that points raw WAV or analysis records at extracted feature JSON.
 - Stable tabular ML feature names for resonance peaks, spectral summaries, decay estimates, transfer-response bands, and fixed 20-band mel-spectrogram summaries.
 - Raw STFT-bin features excluded from Phase 4 model inputs to avoid sample-rate/window-dependent dimensionality.
 - Leakage-aware group holdout splitting by session, glass, device, browser, or combined context fields, with repeated group-holdout helper support.
@@ -87,6 +92,25 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - Compiled benchmark reports across session, glass, device, and browser holdout regimes.
 - Phase 4 evaluation notebook skeleton that delegates to the checked-in training script.
 - Public-safe data, benchmark, and model-card landing zones without committing private audio.
+- Private dataset capture endpoint gated by operator token and explicit capture settings.
+- Operator-only web capture panel, hidden unless `PUBLIC_PHASE4_CAPTURE_ENABLED=true`, for saving labeled probe captures.
+- Private capture inbox layout for WAV, analysis JSON, and manifest-ready `.record.json` fragments.
+- Server-enforced raw-audio capture policy, capture-fragment validation, and idempotency keys for
+  duplicate-safe operator retries.
+- Manifest finalization script that materializes immutable dataset snapshots from inbox fragments.
+- Private GCP Phase 4 Cloud Build pipeline for finalizing private GCS inbox data, training, benchmarking, and uploading generated artifacts back to private GCS.
+
+## Current Cloud Deployment Features
+
+- Cloud Build defaults that run checks and image builds without deploying from PR/default triggers.
+- Main-trigger opt-in Cloud Run deployment through `_DEPLOY_TARGET=cloud-run`.
+- Artifact Registry push steps gated behind the deploy target.
+- Cloud Run API and web service deployment with configurable memory, CPU, concurrency, timeout, min-instance, and max-instance substitutions.
+- Explicit second-generation Cloud Run execution environment and startup CPU boost for API and web deploys.
+- Runtime discovery of the deployed API URL before deploying the web service.
+- API CORS update using both generated Cloud Run web service URL forms plus optional extra origins.
+- `.gcloudignore` and `.gitignore` coverage for local GCP notes, service account key files, private datasets, and generated model artifacts.
+- Public-safe GCP deployment guide in `docs/gcp_cloud_run.md`.
 
 ## Planned DSP Features
 
