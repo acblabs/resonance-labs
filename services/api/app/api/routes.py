@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hmac
 import json
 from typing import Annotated
 
@@ -11,8 +10,6 @@ from pydantic import ValidationError
 
 from app.schemas import (
     AnalysisResponse,
-    DatasetCaptureRequest,
-    DatasetCaptureResponse,
     HealthResponse,
     LlmExplainRequest,
     LlmExplainResponse,
@@ -23,13 +20,11 @@ from app.schemas import (
 )
 from app.services import (
     AnalyzeUploadError,
-    DatasetCaptureStoreError,
     LlmExplanationError,
     analyze_probe_upload,
     explain_probe_result,
-    store_dataset_capture,
 )
-from app.settings import Settings, get_settings
+from app.settings import get_settings
 
 router = APIRouter()
 UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
@@ -70,8 +65,7 @@ async def probe_config() -> ProbeConfigEnvelope:
         },
         warnings=[
             "Do not run active probes through headphones or earbuds.",
-            "The API returns DSP features; Phase 3 fill estimates require local "
-            "browser calibration.",
+            "The API returns acoustic DSP features for room fingerprinting and reporting.",
         ],
     )
 
@@ -80,13 +74,14 @@ async def probe_config() -> ProbeConfigEnvelope:
 async def models() -> ModelsResponse:
     return ModelsResponse(
         active_model=None,
-        phase="phase_4_reference_comparison",
+        phase="phase_4_room_fingerprint",
         notes=[
             "No ML model is loaded.",
-            "The analyze endpoint returns chirp-aligned DSP features and confidence signals.",
-            "Profile-relative fill estimates run in the browser against local IndexedDB anchors.",
-            "The explain endpoint consumes compact structured DSP/reference summaries and never "
-            "raw WAV.",
+            (
+                "The analyze endpoint returns chirp-aligned DSP features for room "
+                "acoustic fingerprints."
+            ),
+            "The explain endpoint consumes compact structured DSP evidence and never raw WAV.",
         ],
     )
 
@@ -126,45 +121,6 @@ async def explain(request: LlmExplainRequest) -> LlmExplainResponse:
         ) from exc
 
 
-@router.post("/api/v1/dataset/captures", response_model=DatasetCaptureResponse)
-async def capture_dataset_record(
-    request: Request,
-    audio: Annotated[UploadFile, File(description="PCM WAV probe recording.")],
-    metadata: Annotated[str, Form(description="JSON-encoded ProbeMetadata.")],
-    capture: Annotated[str, Form(description="JSON-encoded DatasetCaptureRequest.")],
-) -> DatasetCaptureResponse:
-    settings = get_settings()
-    _authorize_dataset_capture(request, settings)
-    _reject_large_content_length(request, settings.max_upload_bytes)
-    parsed_metadata = _parse_metadata(metadata)
-    parsed_capture = _parse_capture(capture)
-    audio_bytes = await _read_upload_limited(audio, settings.max_upload_bytes)
-
-    try:
-        analysis = analyze_probe_upload(
-            audio_bytes=audio_bytes,
-            content_type=audio.content_type or "application/octet-stream",
-            filename=audio.filename,
-            metadata=parsed_metadata,
-            settings=settings,
-        )
-        return store_dataset_capture(
-            audio_bytes=audio_bytes,
-            content_type=audio.content_type or "application/octet-stream",
-            capture=parsed_capture,
-            analysis=analysis,
-            settings=settings,
-            idempotency_key=request.headers.get("Idempotency-Key"),
-        )
-    except AnalyzeUploadError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except DatasetCaptureStoreError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-
-
 def _parse_metadata(raw_metadata: str) -> ProbeMetadata:
     try:
         payload = json.loads(raw_metadata or "{}")
@@ -181,50 +137,6 @@ def _parse_metadata(raw_metadata: str) -> ProbeMetadata:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=exc.errors(),
         ) from exc
-
-
-def _parse_capture(raw_capture: str) -> DatasetCaptureRequest:
-    try:
-        payload = json.loads(raw_capture or "{}")
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"capture must be valid JSON: {exc.msg}",
-        ) from exc
-
-    try:
-        return DatasetCaptureRequest.model_validate(payload)
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=exc.errors(),
-        ) from exc
-
-
-def _authorize_dataset_capture(request: Request, settings: Settings) -> None:
-    if not settings.phase4_capture_enabled:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
-    if not settings.phase4_capture_token:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="PHASE4_CAPTURE_OPERATOR_TOKEN must be configured before capture is enabled.",
-        )
-
-    supplied = _operator_token(request)
-    if supplied is None or not hmac.compare_digest(supplied, settings.phase4_capture_token):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="A valid operator token is required for private dataset capture.",
-        )
-
-
-def _operator_token(request: Request) -> str | None:
-    authorization = request.headers.get("authorization", "")
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() == "bearer" and token.strip():
-        return token.strip()
-    header_token = request.headers.get("x-resonancelab-operator-token")
-    return header_token.strip() if header_token else None
 
 
 def _reject_large_content_length(request: Request, max_upload_bytes: int) -> None:

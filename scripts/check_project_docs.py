@@ -105,7 +105,11 @@ def check_features() -> list[str]:
         return ["FEATURES.md is missing."]
 
     text = features.read_text(encoding="utf-8")
-    required = ("Current Phase 1 Features", "Planned DSP Features", "Planned Calibration Features")
+    required = (
+        "Current Phase 1 Features",
+        "Planned DSP Features",
+        "Planned Room Fingerprint Features",
+    )
     return [
         f"FEATURES.md is missing the '## {section}' section."
         for section in required

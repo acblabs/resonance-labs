@@ -141,7 +141,7 @@ export type AnalysisResponse = {
 export type LlmExplanation = {
   summary: string;
   observations: string[];
-  material_hypotheses: string[];
+  acoustic_hypotheses: string[];
   caveats: string[];
   next_measurement: string[];
 };
@@ -156,44 +156,4 @@ export type LlmExplainResponse = {
   explanation: LlmExplanation;
   evidence: Record<string, unknown>;
   warnings: string[];
-};
-
-export type DatasetCaptureLabel = {
-  fill_percent?: number;
-  fill_mass_g?: number;
-  vessel_empty_mass_g?: number;
-  vessel_full_mass_g?: number;
-  vessel_current_mass_g?: number;
-};
-
-export type DatasetCaptureContext = {
-  session_id: string;
-  glass_id: string;
-  device_id: string;
-  browser_id: string;
-  room_id: string;
-  operator_id?: string;
-  volume_setting?: string;
-  material?: string;
-  geometry?: string;
-  notes?: string;
-};
-
-export type DatasetCaptureRequest = {
-  label: DatasetCaptureLabel;
-  context: DatasetCaptureContext;
-  store_audio: boolean;
-  notes?: string;
-};
-
-export type DatasetCaptureResponse = {
-  record_id: string;
-  status: "stored";
-  inbox_prefix: string;
-  stored_paths: {
-    inbox_record_path: string;
-    audio_path: string | null;
-    analysis_path: string;
-  };
-  analysis: AnalysisResponse;
 };

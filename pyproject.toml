@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "resonancelab"
 version = "0.1.0"
-description = "Sound-only active acoustic sensing DSP and ML helpers."
+description = "Sound-only active acoustic sensing DSP helpers."
 readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"

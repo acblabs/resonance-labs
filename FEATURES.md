@@ -1,6 +1,6 @@
 # Features
 
-ResonanceLab is an active acoustic sensing project for learning how everyday objects respond to sound. The early releases are intentionally narrow: prove a reliable browser chirp capture, add deterministic DSP features, and avoid measurement claims until calibration data exists.
+ResonanceLab is an active acoustic sensing project for room fingerprints and acoustic reports. The current path is intentionally narrow: capture a reliable chirp response, extract deterministic DSP evidence, visualize the response, and avoid claims that a single speaker/microphone can produce a spatial room map.
 
 ## Current Phase 1 Features
 
@@ -15,21 +15,18 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - FastAPI health endpoint.
 - Server-provided default probe configuration and upload limits.
 - Analysis endpoint that validates upload size, content type, WAV structure, duration, sample rate, RMS, peak amplitude, and DC offset.
-- Browser result display with duration, sample rate, alignment confidence, SNR, peak frequency, RT60 proxy, upload size, capture path, and warnings.
+- Browser result display with duration, sample rate, alignment confidence, SNR, dominant mode, RT60 proxy, upload size, capture path, and warnings.
 - Canvas waveform display for captured probe audio.
 - Docker Compose development stack for web and API.
 - Cloud Build configuration for GCP checks, container image builds, and opt-in Cloud Run deploys through private trigger substitutions.
-- Local Git hooks for README, CHANGELOG, and SKILL.md freshness checks.
+- Local Git hooks for README, CHANGELOG, FEATURES, and SKILL.md freshness checks.
 - Pre-commit enforcement that requires `FEATURES.md` to be updated in every commit.
-- Commit-message `[skip docs]` escape hatch for low-signal documentation updates.
 - Client-side probe safety clamping before chirp playback.
 - Cosine-tapered chirps to reduce broadband envelope clicks.
 - Batched AudioWorklet PCM capture to reduce allocation pressure.
 - Bounded API upload reads for oversized request protection.
 - Root-level `python -m pytest` and `python -m ruff check .` developer validation.
-- Vectorized NumPy WAV decoding for Phase 1 PCM uploads.
-- Slimmer web runtime container with production-only Node dependencies.
-- Workspace-correct web Docker build path for Cloud Build image builds.
+- Vectorized NumPy WAV decoding for PCM uploads.
 
 ## Current Phase 2 Features
 
@@ -38,89 +35,33 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - FFT-domain bandpass filtering with cosine transition bands, zero-padding, and cropped output to reduce boundary wraparound.
 - FFT spectral trace with centroid, bandwidth, rolloff, and spectral floor summaries.
 - Compact STFT grid for browser spectrogram rendering.
-- Compact mel-spectrogram grid computed without adding Librosa or PyTorch.
+- Compact mel-spectrogram grid computed without Librosa or PyTorch.
 - Regularized transfer-response magnitude by configured frequency bands.
-- Dominant ring-down peak detection with prominence and Q-factor proxies.
-- Sub-bin interpolation for Q-factor `-3 dB` bandwidth crossings.
-- RMS-envelope log-linear decay fitting with RT60 proxy output and null fit quality for non-decaying fits.
+- Dominant post-chirp peak detection with prominence and Q-factor proxies.
+- dB-domain sub-bin peak interpolation for dominant peak frequency estimates.
+- Interpolated half-power crossings for Q-factor bandwidth estimates.
+- RMS-envelope log-linear decay fitting with RT60 proxy output and weighted fit quality.
 - Signal-to-noise reporting against the pre-roll noise floor, clamped to exclude early detected chirp energy.
 - Browser tabs for waveform, FFT, STFT, and mel-spectrogram views.
 - Deterministic golden DSP tests covering alignment, bandpass behavior, analytic damped sinusoids, peak detection, spectrogram shapes, post-window fallback timing, SNR windowing, and decay-fit edge cases.
 - Committed recorded-style WAV fixture with channel coloration, attenuation, direct-path bleed, echoes, hum/noise, soft clipping, and ring-down.
 - Cross-language golden chirp fixture that guards browser and Python chirp parity.
-- Deterministic fixture generator script for the Phase 2 synthetic fixtures.
+- Deterministic fixture generator script for the synthetic fixtures.
 
-## Current Phase 3 Features
+## Current Room Fingerprint Features
 
-- Browser-local IndexedDB calibration profile storage.
-- Automatic local profile creation for account-free use.
-- Local profile list with create, rename, delete, export, import, and active-profile selection.
-- Empty, 50%, full, and free-air reference capture/save workflow.
-- Repeated anchor aggregation with mean feature vectors and stability statistics.
-- Anchor records storing extracted DSP feature vectors, probe settings, capture signatures, quality signals, and warnings.
-- Canonical capture signatures for sample rate, capture path, browser family, and reported audio processing.
-- Feature-distance interpolation over the empty-to-50% and 50%-to-full calibration segments.
-- Profile-relative fill estimate with confidence label, reference-match display, and global-mean/nearest-anchor baselines.
-- Free-air reference matching that suppresses fill estimates when a probe is closer to the no-glass reference than to calibrated glass anchors.
-- Weighted geometric confidence aggregation with hard caps for weak alignment, probe mismatch, capture mismatch, free-air dominance, too few comparable features, and close anchor spacing.
-- Calibration uncertainty penalties for missing anchors, low SNR, weak chirp alignment, mismatched probe settings, sample-rate/capture mismatch, missing free-air reference, unstable repeats, and close anchor spacing.
-- Browser UI display of fill estimate, confidence, reference match, anchor count, repeat count, storage usage, and calibration warnings.
-- Explicit save controls for storing the current probe as Empty, 50%, Full, or Free air calibration samples.
-- Per-anchor and free-air clearing controls to recover from accidental calibration saves.
-- Unit tests for calibration feature extraction, incomplete profiles, interpolation behavior, baseline beating, repeat aggregation, capture mismatch, free-air references, import/export, and low-quality probe confidence.
-- Dedicated calibration manager component separated from the main probe/visualization component.
-- Probe uploads keep calibration profile IDs and anchor vectors local to the browser.
-
-## Current Phase 4 Features
-
-- Current Phase 4 direction prioritizes free-air and known-object reference comparison, deterministic
-  DSP feature distances, physics caveats, and LLM-assisted interpretation before supervised model
-  training.
-- Browser-local known-object reference saving with material labels.
-- Weighted reference comparison against free-air, calibration anchors, and known-object references.
-- Signal panel material hints, reference confidence, distance margin, free-air distance, and
-  comparable-feature counts for the current probe.
-- Structured `/api/v1/explain` endpoint for compact DSP, calibration, and reference-comparison
-  summaries.
-- Bounded `/api/v1/explain` request bodies for the structured LLM evidence path.
-- Lab UI explanation panel with deterministic fallback summaries when the hosted LLM is disabled.
-- Optional Gemini lab-assistant path using `gemini-3.1-pro-preview`, `global`, and `HIGH` thinking
-  level through Cloud Run service identity.
+- First-screen Room Acoustic Fingerprint workflow in the Lab UI.
+- Acoustic Image panel with waveform, FFT, STFT, and mel-spectrogram views.
+- Room character descriptor from the RT60 proxy: dry, balanced, or live.
+- Brightness descriptor from spectral centroid: dark, neutral, or bright.
+- Dominant low/mid-frequency mode display with Q-factor when available.
+- Transfer-response band table for broad spectral coloration.
+- Decay-window and decay-fit diagnostics.
+- Structured `/api/v1/explain` endpoint for compact DSP evidence.
+- Lab UI explanation panel for observations, acoustic hypotheses, caveats, and next-measurement guidance.
+- Optional Gemini lab-assistant path using `gemini-3.1-pro-preview`, `global`, and `HIGH` thinking level through Cloud Run service identity.
 - Raw WAV files are excluded from the LLM explanation request path by schema and UI behavior.
-- Private dataset manifest format for chirp recordings with required session, glass, device, browser, room, label, probe, and quality metadata.
-- Public JSON Schema for Phase 4 dataset manifests.
-- Glass recording protocol with mass-based fill labeling, repeated captures, free-air references, and quality rejection rules.
-- Canonical Python feature extraction from saved API analysis JSON or raw PCM WAV records.
-- Optional derived Phase 4 manifest generation that points raw WAV or analysis records at extracted feature JSON.
-- Stable tabular ML feature names for resonance peaks, spectral summaries, decay estimates, transfer-response bands, and fixed 20-band mel-spectrogram summaries.
-- Browser calibration feature names stay aligned with the canonical Phase 4 Python feature schema,
-  with legacy profile aliases for older local decay-feature names.
-- Raw STFT-bin features excluded from Phase 4 model inputs to avoid sample-rate/window-dependent dimensionality.
-- Leakage-aware group holdout splitting by session, glass, device, browser, or combined context fields, with repeated group-holdout helper support.
-- Offline scikit-learn baseline trainer with repeated grouped holdout evaluation, fill-percent regression, and fill-bucket classification heads using sparse linear or random-forest model families.
-- Manifest-defined fill buckets threaded through classification, references, confusion matrices, and within-one-bucket metrics.
-- Manifest validation rejects bucket schemas that collapse to duplicate class labels after rounding.
-- Quality gates for missing/weak chirp alignment and missing/low SNR before model fitting.
-- Quality audit metrics for retained, skipped, missing-quality, weak-alignment, and low-SNR records.
-- Train-set feature filtering for all-missing and constant columns before imputation/model fitting.
-- Missingness indicators added during imputation so absent feature families remain visible to models.
-- Group holdout evaluations warn when train/test label coverage is absent or highly imbalanced.
-- Reference metrics for global mean, global median, nearest canonical bucket, and train-mode bucket classification baselines.
-- Baseline artifact export with `joblib`, metrics JSON, feature schema, feature importance, and generated model card.
-- Compiled benchmark reports across session, glass, device, and browser holdout regimes.
-- Phase 4 evaluation notebook skeleton that delegates to the checked-in training script.
-- Public-safe data, benchmark, and model-card landing zones without committing private audio.
-- Private dataset capture endpoint gated by operator token and explicit capture settings.
-- Operator-only web capture panel, hidden unless `PUBLIC_PHASE4_CAPTURE_ENABLED=true`, for saving labeled probe captures.
-- Dataset capture form accepts browser number-input values for fill percent and optional mass fields.
-- Optional single-service Cloud Run capture mode that keeps the deployed topology to
-  `resonancelab-web` and `resonancelab-api`, loads the operator token from Secret Manager, and writes
-  labeled captures to a private GCS inbox only when explicitly enabled.
-- Private capture inbox layout for WAV, analysis JSON, and manifest-ready `.record.json` fragments.
-- Server-enforced raw-audio capture policy, capture-fragment validation, and idempotency keys for
-  duplicate-safe operator retries.
-- Manifest finalization script that materializes immutable dataset snapshots from inbox fragments.
-- Private GCP Phase 4 Cloud Build pipeline for finalizing private GCS inbox data, training, benchmarking, and uploading generated artifacts back to private GCS.
+- Public Cloud Run deploys keep Gemini LLM calls disabled by default while preserving the deterministic explanation response.
 
 ## Current Cloud Deployment Features
 
@@ -131,47 +72,31 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - Explicit second-generation Cloud Run execution environment and startup CPU boost for API and web deploys.
 - Runtime discovery of the deployed API URL before deploying the web service.
 - API CORS update using both generated Cloud Run web service URL forms plus optional extra origins.
-- Public Cloud Run deploys explicitly keep Phase 4 capture disabled by default.
-- Public Cloud Run deploys explicitly keep Gemini LLM calls disabled by default while preserving the
-  deterministic `/api/v1/explain` response.
-- Cloud Build substitutions for the API service can enable Vertex Gemini explanations on the same
-  deployed API service without introducing another Cloud Run service.
-- Optional capture settings can enable the dataset panel and private capture endpoint on the same
-  web/API services for a temporary operator campaign.
-- `.gcloudignore` and `.gitignore` coverage for local GCP notes, service account key files, private datasets, and generated model artifacts.
+- Cloud Build substitutions for the API service can enable Vertex Gemini explanations without introducing another Cloud Run service.
+- `.gcloudignore` and `.gitignore` coverage for local GCP notes, service account key files, private datasets, and generated artifacts.
 - Public-safe GCP deployment guide in `docs/gcp_cloud_run.md`.
 
 ## Planned DSP Features
 
-- Direct-path and room-response caveat reporting.
-- Free-air reference handling for speaker-to-microphone and room response.
-- Empty-glass reference subtraction and comparison features.
+- Better direct-path and room-response caveat reporting.
 - Repeated chirps and synchronous averaging.
 - MFCC summary statistics.
 - Real recorded WAV fixtures from multiple devices, rooms, and sessions, tracked in `docs/real_recording_fixtures.md`.
-- Side-by-side chirp and tap feature comparison.
+- Side-by-side chirp and tap feature comparison for future acoustic experiments.
+- More explicit impulse-response and deconvolved-response visualization.
 
-## Planned Calibration Features
+## Planned Room Fingerprint Features
 
-- Repeated-anchor averaging with within-profile variance estimates.
-- Free-air and empty-vessel reference comparison views.
-- Optional local raw-audio storage only with user opt-in.
-- Tap and chirp side-by-side calibration profiles.
-- Cross-session calibration drift reporting.
-
-## Planned ML Features
-
-- Initial private chirp dataset across multiple devices, browsers, sessions, rooms, and glasses after
-  the reference-comparison workflow has produced useful material hypotheses.
-- Cross-session, cross-glass, cross-device, and cross-browser benchmark reports from private captures.
-- Scikit-learn baseline training as the first supervised model gate.
-- Optional XGBoost challenger after scikit-learn references are established.
-- Small neural audio models only after the baseline and dataset justify them.
+- Polished PNG/acoustic image export with chirp response, deconvolved impulse proxy, STFT or mel spectrogram, decay bands, detected modes, descriptors, and caveats.
+- Room-to-room comparison using repeated measurements from fixed device positions.
+- Position-to-position comparison within one room to show how the acoustic fingerprint changes.
+- Low-frequency mode grouping and warning labels for unstable or unresolved peaks.
+- Decay-band visualization for low, mid, and high frequency ranges.
+- Exportable JSON report alongside the PNG for reproducible measurement notes.
 
 ## Planned Lab Assistant Features
 
 - Experiment design assistance.
-- Physics tutoring for chirps, FFTs, resonance, and damping.
+- Physics tutoring for chirps, FFTs, room modes, and damping.
 - Low-confidence troubleshooting guidance.
-- Optional second-pass textual critique over the same structured evidence once the Gemini path is
-  stable.
+- Optional second-pass textual critique over the same structured evidence once the Gemini path is stable.

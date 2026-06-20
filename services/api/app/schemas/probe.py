@@ -17,65 +17,8 @@ class HealthResponse(BaseModel):
 
 class ModelsResponse(BaseModel):
     active_model: None
-    phase: Literal["phase_4_reference_comparison"]
+    phase: Literal["phase_4_room_fingerprint"]
     notes: list[str]
-
-
-class DatasetCaptureLabel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    fill_percent: float | None = Field(default=None, ge=0, le=100)
-    fill_mass_g: float | None = Field(default=None, ge=0)
-    vessel_empty_mass_g: float | None = Field(default=None, ge=0)
-    vessel_full_mass_g: float | None = Field(default=None, ge=0)
-    vessel_current_mass_g: float | None = Field(default=None, ge=0, exclude=True)
-
-    @model_validator(mode="after")
-    def derive_or_validate_fill_percent(self) -> DatasetCaptureLabel:
-        if self.fill_percent is None:
-            if (
-                self.vessel_current_mass_g is None
-                or self.vessel_empty_mass_g is None
-                or self.vessel_full_mass_g is None
-            ):
-                raise ValueError(
-                    "fill_percent is required unless vessel_current_mass_g, "
-                    "vessel_empty_mass_g, and vessel_full_mass_g are provided."
-                )
-            capacity = self.vessel_full_mass_g - self.vessel_empty_mass_g
-            if capacity <= 0:
-                raise ValueError("vessel_full_mass_g must be greater than vessel_empty_mass_g.")
-            fill_mass = self.vessel_current_mass_g - self.vessel_empty_mass_g
-            self.fill_mass_g = fill_mass if self.fill_mass_g is None else self.fill_mass_g
-            self.fill_percent = 100.0 * fill_mass / capacity
-
-        if self.fill_percent < 0 or self.fill_percent > 100:
-            raise ValueError("fill_percent must be within [0, 100].")
-        return self
-
-
-class DatasetCaptureContext(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    session_id: str = Field(min_length=1)
-    glass_id: str = Field(min_length=1)
-    device_id: str = Field(min_length=1)
-    browser_id: str = Field(min_length=1)
-    room_id: str = Field(min_length=1)
-    operator_id: str | None = None
-    volume_setting: str | None = None
-    material: str | None = None
-    geometry: str | None = None
-    notes: str | None = None
-
-
-class DatasetCaptureRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    label: DatasetCaptureLabel
-    context: DatasetCaptureContext
-    store_audio: bool = True
-    notes: str | None = None
 
 
 class ProbeConfig(BaseModel):
@@ -242,71 +185,10 @@ class AnalysisResponse(BaseModel):
     warnings: list[str] = Field(max_length=64)
 
 
-class ExplainAnchorDistance(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["empty", "half", "full"]
-    label: str
-    fillPercent: float
-    distance: float
-
-
-class ExplainReferenceMatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["free_air"]
-    label: str
-    distance: float
-
-
-class ExplainCalibrationEstimate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    status: Literal["ready", "incomplete"]
-    fillPercent: float | None = None
-    confidence: float = Field(ge=0, le=1)
-    confidenceLabel: Literal["high", "medium", "low", "none"]
-    nearestAnchor: ExplainAnchorDistance | None = None
-    referenceMatch: ExplainReferenceMatch | None = None
-    comparableFeatureCount: int = Field(ge=0)
-    freeAirDistance: float | None = None
-    warnings: list[str] = Field(default_factory=list)
-
-
-class ExplainReferenceDistance(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    role: Literal["free_air", "calibration_anchor", "known_object"]
-    id: str
-    label: str
-    material: str | None = None
-    state: str | None = None
-    distance: float
-    sampleCount: int = Field(ge=0)
-
-
-class ExplainReferenceComparison(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    status: Literal["ready", "empty"]
-    nearest: ExplainReferenceDistance | None = None
-    nearestObject: ExplainReferenceDistance | None = None
-    freeAir: ExplainReferenceDistance | None = None
-    distances: list[ExplainReferenceDistance] = Field(default_factory=list, max_length=24)
-    comparableFeatureCount: int = Field(ge=0)
-    margin: float | None = None
-    confidence: float = Field(ge=0, le=1)
-    confidenceLabel: Literal["high", "medium", "low", "none"]
-    freeAirDominates: bool
-    warnings: list[str] = Field(default_factory=list)
-
-
 class LlmExplainRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     analysis: AnalysisResponse
-    calibration: ExplainCalibrationEstimate | None = None
-    reference_comparison: ExplainReferenceComparison | None = None
     operator_question: str | None = Field(default=None, max_length=500)
     include_raw_audio: Literal[False] = False
 
@@ -314,7 +196,7 @@ class LlmExplainRequest(BaseModel):
 class LlmExplanation(BaseModel):
     summary: str
     observations: list[str] = Field(max_length=8)
-    material_hypotheses: list[str] = Field(max_length=8)
+    acoustic_hypotheses: list[str] = Field(max_length=8)
     caveats: list[str] = Field(max_length=8)
     next_measurement: list[str] = Field(max_length=8)
 
@@ -329,17 +211,3 @@ class LlmExplainResponse(BaseModel):
     explanation: LlmExplanation
     evidence: dict[str, Any]
     warnings: list[str]
-
-
-class DatasetCaptureStoredPaths(BaseModel):
-    inbox_record_path: str
-    audio_path: str | None = None
-    analysis_path: str
-
-
-class DatasetCaptureResponse(BaseModel):
-    record_id: str
-    status: Literal["stored"]
-    inbox_prefix: str
-    stored_paths: DatasetCaptureStoredPaths
-    analysis: AnalysisResponse

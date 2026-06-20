@@ -556,7 +556,7 @@ def compute_transfer_response(
 
     The estimate uses the chirp and the captured response window, including post-chirp
     ring-down when available. It is still a same-setup acoustic path feature, not an
-    isolated vessel transfer function.
+    isolated target transfer function.
     """
 
     captured = _as_mono_float64(captured_response)

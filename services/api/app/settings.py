@@ -1,4 +1,4 @@
-"""Runtime settings for the Phase 1 API."""
+"""Runtime settings for the ResonanceLab API."""
 
 from __future__ import annotations
 
@@ -58,26 +58,6 @@ class Settings:
             "RESONANCELAB_ALLOWED_CONTENT_TYPES",
             "audio/wav,audio/wave,audio/x-wav,application/octet-stream",
         )
-    )
-    phase4_capture_enabled: bool = field(
-        default_factory=lambda: _bool_env("PHASE4_CAPTURE_ENABLED", False)
-    )
-    phase4_capture_token: str | None = field(
-        default_factory=lambda: _optional_env("PHASE4_CAPTURE_OPERATOR_TOKEN")
-    )
-    phase4_capture_gcs_bucket: str | None = field(
-        default_factory=lambda: _optional_env("PHASE4_CAPTURE_GCS_BUCKET")
-    )
-    phase4_capture_inbox_prefix: str = field(
-        default_factory=lambda: os.getenv("PHASE4_CAPTURE_INBOX_PREFIX", "phase4/inbox").strip(
-            "/"
-        )
-    )
-    phase4_capture_local_dir: str | None = field(
-        default_factory=lambda: _optional_env("PHASE4_CAPTURE_LOCAL_DIR")
-    )
-    phase4_capture_store_raw_audio: bool = field(
-        default_factory=lambda: _bool_env("PHASE4_CAPTURE_STORE_RAW_AUDIO", True)
     )
     llm_enabled: bool = field(default_factory=lambda: _bool_env("RESONANCELAB_LLM_ENABLED", False))
     llm_provider: str = field(

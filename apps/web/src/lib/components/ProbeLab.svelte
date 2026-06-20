@@ -17,18 +17,12 @@
     ProbeCapture,
     ProbeConfig,
   } from "$lib/audio/types";
-  import type {
-    CalibrationEstimate,
-    CalibrationProfile,
-    KnownReferenceComparison,
-  } from "$lib/calibration/types";
-  import CalibrationManager from "./CalibrationManager.svelte";
-  import DatasetCapturePanel from "./DatasetCapturePanel.svelte";
   import SpectrogramCanvas from "./SpectrogramCanvas.svelte";
   import SpectrumCanvas from "./SpectrumCanvas.svelte";
   import WaveformCanvas from "./WaveformCanvas.svelte";
 
   type SignalView = "waveform" | "fft" | "stft" | "mel";
+  type NumericProbeConfigKey = Exclude<keyof ProbeConfig, "signal_type">;
 
   let config: ProbeConfig = { ...FALLBACK_PROBE_CONFIG };
   let loadingConfig = true;
@@ -36,19 +30,12 @@
   let status = "Ready";
   let error = "";
   let result: AnalysisResponse | null = null;
-  let lastCapture: ProbeCapture | null = null;
   let samples: Float32Array | null = null;
   let sampleRateHz = 0;
   let signalView: SignalView = "waveform";
-  let selectedProfile: CalibrationProfile | null = null;
-  let calibrationEstimate: CalibrationEstimate | null = null;
-  let referenceComparison: KnownReferenceComparison | null = null;
   let explanation: LlmExplainResponse | null = null;
   let explaining = false;
   let explainError = "";
-  let selectedAnchorCount = 0;
-  let selectedObservationCount = 0;
-  type NumericProbeConfigKey = Exclude<keyof ProbeConfig, "signal_type">;
 
   onMount(async () => {
     await loadConfig();
@@ -72,14 +59,12 @@
     result = null;
     explanation = null;
     explainError = "";
-    lastCapture = null;
     status = "Starting";
 
     try {
-      const capture = await captureProbe(config, (nextStatus) => {
+      const capture: ProbeCapture = await captureProbe(config, (nextStatus) => {
         status = nextStatus;
       });
-      lastCapture = capture;
       samples = capture.samples;
       sampleRateHz = capture.sampleRateHz;
       status = "Uploading";
@@ -108,36 +93,13 @@
     explaining = true;
     explainError = "";
     try {
-      explanation = await explainProbeResult(
-        result,
-        compactCalibration(calibrationEstimate),
-        referenceComparison,
-      );
+      explanation = await explainProbeResult(result);
     } catch (errorValue) {
       explainError =
         errorValue instanceof Error ? errorValue.message : String(errorValue);
     } finally {
       explaining = false;
     }
-  }
-
-  function compactCalibration(
-    estimate: CalibrationEstimate | null,
-  ): Record<string, unknown> | null {
-    if (!estimate) {
-      return null;
-    }
-    return {
-      status: estimate.status,
-      fillPercent: estimate.fillPercent,
-      confidence: estimate.confidence,
-      confidenceLabel: estimate.confidenceLabel,
-      nearestAnchor: estimate.nearestAnchor,
-      referenceMatch: estimate.referenceMatch,
-      comparableFeatureCount: estimate.comparableFeatureCount,
-      freeAirDistance: estimate.freeAirDistance,
-      warnings: estimate.warnings,
-    };
   }
 
   $: expectedSeconds =
@@ -172,93 +134,41 @@
     return `${value.toFixed(3)} s`;
   }
 
-  function formatPercent(value: number | null | undefined): string {
-    if (value === null || value === undefined || !Number.isFinite(value)) {
+  function formatRoomCharacter(analysis: AnalysisResponse | null): string {
+    const rt60 = analysis?.dsp.decay.rt60_seconds;
+    if (rt60 === null || rt60 === undefined || !Number.isFinite(rt60)) {
       return "--";
     }
-    return `${value.toFixed(0)}%`;
+    if (rt60 < 0.25) {
+      return "Dry";
+    }
+    if (rt60 > 0.75) {
+      return "Live";
+    }
+    return "Balanced";
   }
 
-  function formatConfidence(estimateValue: CalibrationEstimate | null): string {
-    if (!estimateValue || estimateValue.status !== "ready") {
+  function formatBrightness(analysis: AnalysisResponse | null): string {
+    const centroid = analysis?.dsp.fft.centroid_hz;
+    if (centroid === null || centroid === undefined || !Number.isFinite(centroid)) {
       return "--";
     }
-    if (estimateValue.referenceMatch) {
-      return "reference match";
+    if (centroid > 3500) {
+      return "Bright";
     }
-    return `${estimateValue.confidenceLabel} ${(estimateValue.confidence * 100).toFixed(0)}%`;
+    if (centroid < 1200) {
+      return "Dark";
+    }
+    return "Neutral";
   }
 
-  function formatFillEstimate(
-    estimateValue: CalibrationEstimate | null,
-  ): string {
-    if (!estimateValue) {
+  function formatMode(analysis: AnalysisResponse | null): string {
+    const peak = analysis?.dsp.dominant_peaks[0];
+    if (!peak) {
       return "--";
     }
-    if (estimateValue.referenceMatch) {
-      return estimateValue.referenceMatch.label;
-    }
-    return formatPercent(estimateValue.fillPercent);
-  }
-
-  function formatReferenceMatch(
-    estimateValue: CalibrationEstimate | null,
-  ): string {
-    return (
-      estimateValue?.referenceMatch?.label ??
-      estimateValue?.nearestAnchor?.label ??
-      "--"
-    );
-  }
-
-  function formatKnownReferenceMatch(
-    comparison: KnownReferenceComparison | null,
-  ): string {
-    if (!comparison || comparison.status !== "ready") {
-      return "--";
-    }
-    if (comparison.freeAirDominates) {
-      return "Free air";
-    }
-    const nearest = comparison.nearestObject ?? comparison.nearest;
-    if (!nearest) {
-      return "--";
-    }
-    return nearest.material ? `${nearest.label} (${nearest.material})` : nearest.label;
-  }
-
-  function formatReferenceConfidence(
-    comparison: KnownReferenceComparison | null,
-  ): string {
-    if (!comparison || comparison.status !== "ready") {
-      return "--";
-    }
-    if (comparison.freeAirDominates) {
-      return "free-air dominated";
-    }
-    return `${comparison.confidenceLabel} ${(comparison.confidence * 100).toFixed(0)}%`;
-  }
-
-  function formatDistance(value: number | null | undefined): string {
-    if (value === null || value === undefined || !Number.isFinite(value)) {
-      return "--";
-    }
-    return value.toFixed(2);
-  }
-
-  function formatRepeatCount(count: number | null | undefined): string {
-    if (!count) {
-      return "n=0";
-    }
-    return `n=${count}`;
-  }
-
-  function formatStability(estimateValue: CalibrationEstimate | null): string {
-    const value = estimateValue?.profileStability.featureStdMax;
-    if (value === null || value === undefined || !Number.isFinite(value)) {
-      return "--";
-    }
-    return value.toFixed(2);
+    const q = peak.q_factor === null ? "" : `, Q ${peak.q_factor.toFixed(1)}`;
+    return `${formatHz(peak.frequency_hz)}${q}`;
   }
 </script>
 
@@ -266,9 +176,9 @@
   <section class="hero-row" aria-label="Acoustic probe workflow">
     <div class="panel">
       <div class="panel-header">
-        <h1 class="panel-title">Active Probe</h1>
+        <h1 class="panel-title">Room Acoustic Fingerprint</h1>
         <p class="panel-subtitle">
-          Chirp capture, WAV upload, alignment, and Phase 2 DSP analysis.
+          Chirp capture, impulse-response features, spectrograms, decay, and room-mode descriptors.
         </p>
       </div>
 
@@ -381,29 +291,14 @@
         {#if error}
           <div class="error" role="alert">{error}</div>
         {/if}
-
-        <CalibrationManager
-          {result}
-          bind:selectedProfile
-          bind:calibrationEstimate
-          bind:referenceComparison
-          bind:selectedAnchorCount
-          bind:selectedObservationCount
-        />
-
-        <DatasetCapturePanel
-          {result}
-          wavBlob={lastCapture?.wavBlob ?? null}
-          metadata={lastCapture?.metadata ?? null}
-        />
       </div>
     </div>
 
     <div class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">Signal</h2>
+        <h2 class="panel-title">Acoustic Image</h2>
         <p class="panel-subtitle">
-          Captured PCM waveform and API-derived frequency views.
+          Captured waveform, frequency response, and time-frequency room fingerprint.
         </p>
       </div>
 
@@ -462,72 +357,56 @@
 
         <div class="metric-grid">
           <div class="metric">
-            <span>Duration</span>
-            <strong
-              >{result
-                ? `${result.audio.duration_seconds.toFixed(3)} s`
-                : "--"}</strong
-            >
+            <span>Room character</span>
+            <strong>{formatRoomCharacter(result)}</strong>
           </div>
           <div class="metric">
-            <span>Sample rate</span>
-            <strong
-              >{result ? `${result.audio.sample_rate_hz} Hz` : "--"}</strong
-            >
+            <span>Brightness</span>
+            <strong>{formatBrightness(result)}</strong>
+          </div>
+          <div class="metric">
+            <span>Dominant mode</span>
+            <strong>{formatMode(result)}</strong>
+          </div>
+          <div class="metric">
+            <span>RT60 proxy</span>
+            <strong>{result ? formatSeconds(result.dsp.decay.rt60_seconds) : "--"}</strong>
           </div>
           <div class="metric">
             <span>Alignment</span>
-            <strong
-              >{result
-                ? `${(result.alignment.confidence ?? 0).toFixed(3)}`
-                : "--"}</strong
-            >
-          </div>
-          <div class="metric">
-            <span>SNR</span>
-            <strong
-              >{result ? formatDb(result.dsp.signal_to_noise_db) : "--"}</strong
-            >
-          </div>
-          <div class="metric">
-            <span>Peak Hz</span>
-            <strong>{topPeak ? formatHz(topPeak.frequency_hz) : "--"}</strong>
-          </div>
-          <div class="metric">
-            <span>RT60</span>
-            <strong
-              >{result
-                ? formatSeconds(result.dsp.decay.rt60_seconds)
-                : "--"}</strong
-            >
-          </div>
-          <div class="metric">
-            <span>Fill estimate</span>
-            <strong>{formatFillEstimate(calibrationEstimate)}</strong>
-          </div>
-          <div class="metric">
-            <span>Confidence</span>
             <strong>
-              {calibrationEstimate?.status === "ready"
-                ? formatConfidence(calibrationEstimate)
-                : `${selectedAnchorCount}/3 anchors`}
+              {result ? `${(result.alignment.confidence ?? 0).toFixed(3)}` : "--"}
             </strong>
           </div>
           <div class="metric">
-            <span>Anchor stability</span>
-            <strong>{formatStability(calibrationEstimate)}</strong>
+            <span>SNR</span>
+            <strong>{result ? formatDb(result.dsp.signal_to_noise_db) : "--"}</strong>
           </div>
           <div class="metric">
-            <span>Material hint</span>
-            <strong>{formatKnownReferenceMatch(referenceComparison)}</strong>
+            <span>Centroid</span>
+            <strong>{result ? formatHz(result.dsp.fft.centroid_hz) : "--"}</strong>
           </div>
           <div class="metric">
-            <span>Reference confidence</span>
-            <strong>{formatReferenceConfidence(referenceComparison)}</strong>
+            <span>Rolloff</span>
+            <strong>{result ? formatHz(result.dsp.fft.rolloff_hz) : "--"}</strong>
           </div>
           <div class="metric">
-            <span>Reference margin</span>
-            <strong>{formatDistance(referenceComparison?.margin)}</strong>
+            <span>Duration</span>
+            <strong>
+              {result ? `${result.audio.duration_seconds.toFixed(3)} s` : "--"}
+            </strong>
+          </div>
+          <div class="metric">
+            <span>Sample rate</span>
+            <strong>{result ? `${result.audio.sample_rate_hz} Hz` : "--"}</strong>
+          </div>
+          <div class="metric">
+            <span>Peak amplitude</span>
+            <strong>{result ? result.audio.peak_amplitude.toFixed(3) : "--"}</strong>
+          </div>
+          <div class="metric">
+            <span>Warnings</span>
+            <strong>{result?.warnings.length ?? 0}</strong>
           </div>
         </div>
 
@@ -546,7 +425,7 @@
               <dd>{(result.audio.byte_count / 1024).toFixed(1)} KB WAV</dd>
             </div>
             <div class="result-row">
-              <dt>Alignment</dt>
+              <dt>Detected chirp</dt>
               <dd>{formatSeconds(result.alignment.detected_start_seconds)}</dd>
             </div>
             <div class="result-row">
@@ -558,46 +437,20 @@
               </dd>
             </div>
             <div class="result-row">
-              <dt>Centroid</dt>
-              <dd>{formatHz(result.dsp.fft.centroid_hz)}</dd>
-            </div>
-            <div class="result-row">
-              <dt>Rolloff</dt>
-              <dd>{formatHz(result.dsp.fft.rolloff_hz)}</dd>
-            </div>
-            <div class="result-row">
-              <dt>Profile</dt>
-              <dd>{selectedProfile?.name ?? "--"}</dd>
-            </div>
-            <div class="result-row">
-              <dt>Reference match</dt>
-              <dd>{formatReferenceMatch(calibrationEstimate)}</dd>
-            </div>
-            <div class="result-row">
-              <dt>Known reference</dt>
-              <dd>{formatKnownReferenceMatch(referenceComparison)}</dd>
-            </div>
-            <div class="result-row">
-              <dt>Free-air distance</dt>
-              <dd>{formatDistance(referenceComparison?.freeAir?.distance)}</dd>
-            </div>
-            <div class="result-row">
-              <dt>Reference features</dt>
-              <dd>{referenceComparison?.comparableFeatureCount ?? 0}</dd>
-            </div>
-            <div class="result-row">
-              <dt>Free-air ref</dt>
+              <dt>Decay window</dt>
               <dd>
-                {selectedProfile?.freeAirReference
-                  ? formatRepeatCount(
-                      selectedProfile.freeAirReference.sampleCount,
-                    )
-                  : "--"}
+                {formatSeconds(result.dsp.decay.window_start_seconds)} - {formatSeconds(
+                  result.dsp.decay.window_end_seconds,
+                )}
               </dd>
             </div>
             <div class="result-row">
-              <dt>Profile samples</dt>
-              <dd>{selectedObservationCount}</dd>
+              <dt>Decay fit</dt>
+              <dd>
+                {result.dsp.decay.fit_r2 === null
+                  ? "--"
+                  : result.dsp.decay.fit_r2.toFixed(3)}
+              </dd>
             </div>
           </dl>
 
@@ -648,7 +501,7 @@
                 <div>
                   <h3>Hypotheses</h3>
                   <ul>
-                    {#each explanation.explanation.material_hypotheses as item}
+                    {#each explanation.explanation.acoustic_hypotheses as item}
                       <li>{item}</li>
                     {/each}
                   </ul>
@@ -676,14 +529,6 @@
         {#if result?.warnings.length}
           <ul class="notice-list" aria-label="Analysis warnings">
             {#each result.warnings as warning}
-              <li>{warning}</li>
-            {/each}
-          </ul>
-        {/if}
-
-        {#if calibrationEstimate?.warnings.length}
-          <ul class="notice-list" aria-label="Calibration warnings">
-            {#each calibrationEstimate.warnings as warning}
               <li>{warning}</li>
             {/each}
           </ul>

@@ -1,4 +1,4 @@
-"""Structured DSP/reference explanations with optional Gemini grounding."""
+"""Structured DSP explanations with optional Gemini grounding."""
 
 from __future__ import annotations
 
@@ -15,10 +15,11 @@ class LlmExplanationError(RuntimeError):
 
 
 SYSTEM_PROMPT = """You are ResonanceLab's lab assistant for active acoustic sensing.
-Explain only from the supplied structured DSP and reference-comparison evidence.
-Do not claim benchmarked material classification, identity, medical, legal, or safety certainty.
+Explain only from the supplied structured DSP evidence.
+Frame outputs as room acoustic fingerprints, not spatial maps or object identity claims.
+Do not claim medical, legal, safety, material, or geometry certainty.
 Do not ask for or infer from raw audio. The raw WAV is intentionally absent.
-Return compact JSON with keys: summary, observations, material_hypotheses, caveats,
+Return compact JSON with keys: summary, observations, acoustic_hypotheses, caveats,
 next_measurement.
 Each list should contain short, evidence-grounded strings."""
 
@@ -27,7 +28,7 @@ def explain_probe_result(
     request: LlmExplainRequest,
     settings: Settings,
 ) -> LlmExplainResponse:
-    """Return a grounded explanation from compact analysis/reference evidence."""
+    """Return a grounded explanation from compact analysis evidence."""
 
     evidence = build_evidence_packet(request)
     deterministic = deterministic_explanation(evidence)
@@ -44,7 +45,7 @@ def explain_probe_result(
             explanation=deterministic,
             evidence=evidence,
             warnings=[
-                "LLM explanation is disabled; returning deterministic DSP/reference summary.",
+                "LLM explanation is disabled; returning deterministic DSP summary.",
                 *warnings,
             ],
         )
@@ -94,14 +95,6 @@ def build_evidence_packet(request: LlmExplainRequest) -> dict[str, Any]:
         }
         for band in analysis.dsp.transfer_response[:8]
     ]
-    reference = (
-        request.reference_comparison.model_dump(mode="json", exclude_none=True)
-        if request.reference_comparison
-        else None
-    )
-    if reference and len(reference.get("distances", [])) > 12:
-        reference["distances"] = reference["distances"][:12]
-
     evidence: dict[str, Any] = {
         "analysis_id": str(analysis.analysis_id),
         "audio": {
@@ -139,12 +132,6 @@ def build_evidence_packet(request: LlmExplainRequest) -> dict[str, Any]:
                 "fit_r2": _round_optional(analysis.dsp.decay.fit_r2, 4),
             },
         },
-        "calibration": (
-            request.calibration.model_dump(mode="json", exclude_none=True)
-            if request.calibration
-            else None
-        ),
-        "reference_comparison": reference,
         "operator_question": request.operator_question,
         "raw_audio_present": False,
         "warnings": [],
@@ -158,34 +145,18 @@ def deterministic_explanation(evidence: dict[str, Any]) -> LlmExplanation:
 
     quality = evidence["quality"]
     dsp = evidence["dsp"]
-    calibration = evidence.get("calibration")
-    reference = evidence.get("reference_comparison")
-    nearest_object = reference.get("nearestObject") if reference else None
-    nearest = reference.get("nearest") if reference else None
-    free_air = reference.get("freeAir") if reference else None
-    free_air_dominates = bool(reference.get("freeAirDominates")) if reference else False
 
     top_peak = _first(dsp.get("dominant_peaks", []))
-    summary = (
-        "The probe has enough structured DSP evidence to explain, but not to identify a "
-        "material globally."
-    )
-    if reference and reference.get("status") == "ready":
-        if free_air_dominates:
-            summary = (
-                "The current response is closer to the saved free-air/room reference than to "
-                "saved object references."
-            )
-        elif nearest_object:
-            summary = (
-                "The current response is most similar to the saved "
-                f"{nearest_object['label']} reference under this setup."
-            )
-        elif nearest:
-            summary = (
-                "The current response is closest to the saved "
-                f"{nearest['label']} reference under this setup."
-            )
+    rt60 = dsp["decay"].get("rt60_seconds")
+    centroid = dsp.get("spectral_centroid_hz")
+    summary = "This chirp produced a structured acoustic fingerprint of the capture space."
+    if rt60 is not None:
+        if rt60 < 0.25:
+            summary = "This capture has a short decay tail, suggesting a relatively dry space."
+        elif rt60 > 0.75:
+            summary = "This capture has a longer decay tail, suggesting a livelier echo response."
+    if centroid is not None and centroid > 3000:
+        summary += " The spectrum is weighted toward brighter high-frequency energy."
 
     observations = [
         (
@@ -205,71 +176,45 @@ def deterministic_explanation(evidence: dict[str, Any]) -> LlmExplanation:
             f"{top_peak['frequency_hz']:.1f} Hz with "
             f"{top_peak['prominence_db']:.1f} dB prominence."
         )
-    if calibration and calibration.get("status") == "ready":
-        fill = calibration.get("fillPercent")
-        if fill is not None:
-            observations.append(
-                f"Local profile-relative fill estimate is {fill:.0f}% "
-                f"with {calibration.get('confidenceLabel', 'unknown')} confidence."
-            )
-    if reference and reference.get("status") == "ready":
-        observations.append(
-            "Reference comparison used "
-            f"{reference.get('comparableFeatureCount', 0)} comparable DSP features."
-        )
-        if free_air:
-            observations.append(f"Distance to free-air reference is {free_air['distance']:.2f}.")
 
-    material_hypotheses: list[str] = []
-    if free_air_dominates:
-        material_hypotheses.append(
-            "No strong object-response hypothesis; free-air/room path dominates."
-        )
-    elif nearest_object:
-        material = nearest_object.get("material") or "unknown material"
-        material_hypotheses.append(
-            f"Same-setup similarity favors saved reference '{nearest_object['label']}' "
-            f"with material label '{material}'."
-        )
-    elif nearest:
-        material_hypotheses.append(
-            f"Same-setup similarity favors saved reference '{nearest['label']}'."
+    acoustic_hypotheses: list[str] = []
+    if rt60 is None:
+        acoustic_hypotheses.append("Decay tail was not stable enough for an RT60 proxy.")
+    elif rt60 < 0.25:
+        acoustic_hypotheses.append("Short decay suggests a dry or strongly damped capture space.")
+    elif rt60 > 0.75:
+        acoustic_hypotheses.append(
+            "Longer decay suggests a reflective or echo-prone capture space."
         )
     else:
-        material_hypotheses.append("No known-object reference is available for a material hint.")
+        acoustic_hypotheses.append("Mid-length decay suggests a moderately live capture space.")
+    if top_peak:
+        acoustic_hypotheses.append(
+            f"The strongest modal feature is near {top_peak['frequency_hz']:.1f} Hz."
+        )
 
     caveats = [
-        "Similarity is not identity; this is not a benchmarked material classifier.",
-        "Browser speaker, microphone, room path, and object placement can dominate the response.",
+        "This is an acoustic fingerprint, not a spatial reconstruction of room geometry.",
+        "Browser speaker, microphone, device placement, and gain processing affect the response.",
         "No raw audio was sent to the LLM path.",
     ]
     caveats.extend(_take_strings(quality.get("warnings", []), limit=3))
-    if reference:
-        caveats.extend(_take_strings(reference.get("warnings", []), limit=3))
 
     next_measurement = [
         (
-            "Repeat the same probe without moving the device or object to check "
-            "nearest-reference stability."
+            "Repeat the same probe without moving the device to check fingerprint stability."
         ),
-        (
-            "Save or refresh a free-air reference if room position, browser, volume, or "
-            "device changes."
-        ),
+        "Capture another position in the same room to compare how the decay map changes.",
     ]
-    if free_air_dominates or not nearest_object:
-        next_measurement.append(
-            "Save a known-object reference in the same geometry before asking for a material hint."
-        )
     if quality.get("snr_db") is not None and quality["snr_db"] < 12:
         next_measurement.append(
-            "Increase repeat count or reduce room noise before trusting reference distances."
+            "Reduce room noise or increase playback volume slightly before trusting descriptors."
         )
 
     return LlmExplanation(
         summary=summary,
         observations=observations[:6],
-        material_hypotheses=material_hypotheses[:4],
+        acoustic_hypotheses=acoustic_hypotheses[:4],
         caveats=caveats[:6],
         next_measurement=next_measurement[:5],
     )
@@ -308,7 +253,7 @@ def _generate_vertex_gemini_explanation(
         payload = {
             "summary": text,
             "observations": fallback.observations,
-            "material_hypotheses": fallback.material_hypotheses,
+            "acoustic_hypotheses": fallback.acoustic_hypotheses,
             "caveats": fallback.caveats,
             "next_measurement": fallback.next_measurement,
         }
@@ -334,7 +279,7 @@ def _vertex_client(project_id: str | None, location: str):
 def _prompt_from_evidence(evidence: dict[str, Any]) -> str:
     return (
         "Explain this ResonanceLab probe result from structured evidence only. "
-        "Separate measured observations from material hypotheses and caveats.\n\n"
+        "Separate measured observations from acoustic hypotheses and caveats.\n\n"
         f"{json.dumps(evidence, sort_keys=True, separators=(',', ':'))}"
     )
 
@@ -353,9 +298,9 @@ def _coerce_explanation(payload: dict[str, Any], fallback: LlmExplanation) -> Ll
     return LlmExplanation(
         summary=_string_or(payload.get("summary"), fallback.summary),
         observations=_list_or(payload.get("observations"), fallback.observations),
-        material_hypotheses=_list_or(
-            payload.get("material_hypotheses"),
-            fallback.material_hypotheses,
+        acoustic_hypotheses=_list_or(
+            payload.get("acoustic_hypotheses"),
+            fallback.acoustic_hypotheses,
         ),
         caveats=_list_or(payload.get("caveats"), fallback.caveats),
         next_measurement=_list_or(payload.get("next_measurement"), fallback.next_measurement),
@@ -369,12 +314,7 @@ def _evidence_warnings(evidence: dict[str, Any]) -> list[str]:
         warnings.append("Low chirp alignment confidence; explanation should be treated as weak.")
     snr = quality.get("snr_db")
     if snr is not None and snr < 12:
-        warnings.append("Low SNR; resonance and reference distances may be unstable.")
-    reference = evidence.get("reference_comparison")
-    if not reference or reference.get("status") != "ready":
-        warnings.append("No ready reference comparison was supplied.")
-    elif reference.get("freeAirDominates"):
-        warnings.append("Free-air/room response dominates the known-object comparison.")
+        warnings.append("Low SNR; acoustic descriptors may be unstable.")
     return warnings
 
 

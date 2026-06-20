@@ -2,8 +2,6 @@ import { env } from "$env/dynamic/public";
 import { dev } from "$app/environment";
 import type {
   AnalysisResponse,
-  DatasetCaptureRequest,
-  DatasetCaptureResponse,
   LlmExplainResponse,
   ProbeConfigEnvelope,
   ProbeMetadata,
@@ -56,8 +54,6 @@ export async function analyzeProbe(
 
 export async function explainProbeResult(
   analysis: AnalysisResponse,
-  calibration: unknown,
-  referenceComparison: unknown,
 ): Promise<LlmExplainResponse> {
   const response = await fetch(`${apiBaseUrl()}/api/v1/explain`, {
     method: "POST",
@@ -66,8 +62,6 @@ export async function explainProbeResult(
     },
     body: JSON.stringify({
       analysis,
-      calibration,
-      reference_comparison: referenceComparison,
       include_raw_audio: false,
     }),
   });
@@ -80,86 +74,4 @@ export async function explainProbeResult(
   }
 
   return response.json() as Promise<LlmExplainResponse>;
-}
-
-export function isPhase4CaptureEnabled(): boolean {
-  return env.PUBLIC_PHASE4_CAPTURE_ENABLED === "true";
-}
-
-export async function saveDatasetCapture(
-  wavBlob: Blob,
-  metadata: ProbeMetadata,
-  capture: DatasetCaptureRequest,
-  operatorToken: string,
-): Promise<DatasetCaptureResponse> {
-  const form = new FormData();
-  form.append("audio", wavBlob, "resonancelab-phase4-capture.wav");
-  form.append("metadata", JSON.stringify(metadata));
-  form.append("capture", JSON.stringify(capture));
-
-  const idempotencyKey = await datasetCaptureIdempotencyKey(
-    wavBlob,
-    metadata,
-    capture,
-  );
-
-  const response = await fetch(`${apiBaseUrl()}/api/v1/dataset/captures`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${operatorToken}`,
-      "Idempotency-Key": idempotencyKey,
-    },
-    body: form,
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Dataset capture failed with HTTP ${response.status}: ${errorText}`,
-    );
-  }
-
-  return response.json() as Promise<DatasetCaptureResponse>;
-}
-
-async function datasetCaptureIdempotencyKey(
-  wavBlob: Blob,
-  metadata: ProbeMetadata,
-  capture: DatasetCaptureRequest,
-): Promise<string> {
-  const audioDigest = await sha256Hex(await wavBlob.arrayBuffer());
-  const metadataDigest = await sha256Hex(
-    bytesToArrayBuffer(new TextEncoder().encode(stableStringify(metadata))),
-  );
-  const captureDigest = await sha256Hex(
-    bytesToArrayBuffer(new TextEncoder().encode(stableStringify(capture))),
-  );
-  return `${audioDigest.slice(0, 32)}-${metadataDigest.slice(0, 12)}-${captureDigest.slice(0, 12)}`;
-}
-
-async function sha256Hex(data: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
-}
-
-function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const copy = new Uint8Array(bytes.byteLength);
-  copy.set(bytes);
-  return copy.buffer;
-}
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
-    .join(",")}}`;
 }

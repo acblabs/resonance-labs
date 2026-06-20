@@ -1,4 +1,0 @@
--r requirements.txt
--e .
-joblib>=1.4,<2.0
-scikit-learn>=1.8,<2.0
