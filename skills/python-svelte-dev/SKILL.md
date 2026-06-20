@@ -13,7 +13,7 @@ metadata:
 
 This skill governs the frontend and backend architecture of the **ResonanceLab** platform, emphasizing robust browser audio capture, deterministic DSP responses, and a premium lab-style interface.
 
-For project context, repository layout details, and phase gates, refer to the [implementation_plan.md](file:///c:/Users/pcaccount/.gemini/antigravity-ide/scratch/resonance-labs/implementation_plan.md).
+For project context and repository layout details, refer to the root README, FEATURES, and docs directory.
 
 ---
 

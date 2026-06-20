@@ -145,9 +145,6 @@ def check_skills() -> list[str]:
 
         if "ResonanceLab" not in text:
             errors.append(f"{relative} should mention ResonanceLab project context.")
-        if "implementation_plan.md" not in text:
-            errors.append(f"{relative} should reference the implementation plan.")
-
     return errors
 
 
