@@ -11,18 +11,29 @@
     clampProbeConfig,
   } from "$lib/audio/chirp";
   import { captureProbe } from "$lib/audio/recorder";
+  import {
+    buildAcousticReport,
+    buildDeviceValidation,
+    downloadAcousticReportJson,
+    downloadAcousticReportPng,
+  } from "$lib/report/acousticReport";
   import type {
     AnalysisResponse,
     LlmExplainResponse,
     ProbeCapture,
     ProbeConfig,
   } from "$lib/audio/types";
+  import type {
+    DeviceValidationSummary,
+    ValidationStatus,
+  } from "$lib/report/acousticReport";
   import SpectrogramCanvas from "./SpectrogramCanvas.svelte";
   import SpectrumCanvas from "./SpectrumCanvas.svelte";
   import WaveformCanvas from "./WaveformCanvas.svelte";
 
   type SignalView = "waveform" | "fft" | "stft" | "mel";
   type NumericProbeConfigKey = Exclude<keyof ProbeConfig, "signal_type">;
+  const VERY_HIGH_Q_THRESHOLD = 300;
 
   let config: ProbeConfig = { ...FALLBACK_PROBE_CONFIG };
   let loadingConfig = true;
@@ -36,6 +47,8 @@
   let explanation: LlmExplainResponse | null = null;
   let explaining = false;
   let explainError = "";
+  let exportingReport = false;
+  let reportError = "";
 
   onMount(async () => {
     await loadConfig();
@@ -59,6 +72,7 @@
     result = null;
     explanation = null;
     explainError = "";
+    reportError = "";
     status = "Starting";
 
     try {
@@ -102,6 +116,27 @@
     }
   }
 
+  async function exportCurrentReport(kind: "json" | "png"): Promise<void> {
+    if (!result || exportingReport) {
+      return;
+    }
+    exportingReport = true;
+    reportError = "";
+    try {
+      const report = buildAcousticReport(result, explanation);
+      if (kind === "json") {
+        downloadAcousticReportJson(report);
+      } else {
+        await downloadAcousticReportPng(report);
+      }
+    } catch (errorValue) {
+      reportError =
+        errorValue instanceof Error ? errorValue.message : String(errorValue);
+    } finally {
+      exportingReport = false;
+    }
+  }
+
   $: expectedSeconds =
     (config.pre_roll_ms + config.duration_ms + config.post_roll_ms) / 1000;
   $: topPeak = result?.dsp.dominant_peaks[0] ?? null;
@@ -109,6 +144,8 @@
     signalView === "mel"
       ? (result?.dsp.mel_spectrogram ?? null)
       : (result?.dsp.stft ?? null);
+  $: validation = result ? buildDeviceValidation(result) : null;
+  $: dominantPeakNote = topPeak ? highQNote(topPeak.q_factor) : "";
 
   function formatHz(value: number | null | undefined): string {
     if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -167,14 +204,45 @@
     if (!peak) {
       return "--";
     }
-    const q = peak.q_factor === null ? "" : `, Q ${peak.q_factor.toFixed(1)}`;
+    const q = peak.q_factor === null ? "" : `, ${formatQ(peak.q_factor)}`;
     return `${formatHz(peak.frequency_hz)}${q}`;
+  }
+
+  function formatQ(qFactor: number): string {
+    if (qFactor > VERY_HIGH_Q_THRESHOLD) {
+      return `Q >${VERY_HIGH_Q_THRESHOLD}`;
+    }
+    return `Q ${qFactor.toFixed(1)}`;
+  }
+
+  function highQNote(qFactor: number | null): string {
+    if (qFactor === null || qFactor <= VERY_HIGH_Q_THRESHOLD) {
+      return "";
+    }
+    return "Very narrow dominant peak; treat the Q proxy as device- and tonal-artifact-sensitive.";
+  }
+
+  function formatValidation(summary: DeviceValidationSummary | null): string {
+    if (!summary) {
+      return "--";
+    }
+    return `${summary.status.toUpperCase()} ${Math.round(summary.score * 100)}%`;
+  }
+
+  function validationTone(status: ValidationStatus): string {
+    if (status === "pass") {
+      return "Pass";
+    }
+    if (status === "review") {
+      return "Review";
+    }
+    return "Fail";
   }
 </script>
 
 <main class="main">
   <section class="hero-row" aria-label="Acoustic probe workflow">
-    <div class="panel">
+    <div class="panel panel--controls">
       <div class="panel-header">
         <h1 class="panel-title">Room Acoustic Fingerprint</h1>
         <p class="panel-subtitle">
@@ -294,7 +362,7 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel panel--results">
       <div class="panel-header">
         <h2 class="panel-title">Acoustic Image</h2>
         <p class="panel-subtitle">
@@ -408,9 +476,60 @@
             <span>Warnings</span>
             <strong>{result?.warnings.length ?? 0}</strong>
           </div>
+          <div class="metric">
+            <span>Run quality</span>
+            <strong>{formatValidation(validation)}</strong>
+          </div>
         </div>
 
         {#if result}
+          <div class="report-block" aria-label="Acoustic report export">
+            <div class="section-heading">
+              <h2>Report</h2>
+              <span>{formatValidation(validation)}</span>
+            </div>
+            <div class="actions">
+              <button
+                class="secondary-button"
+                type="button"
+                disabled={exportingReport}
+                on:click={() => exportCurrentReport("json")}
+              >
+                {exportingReport ? "Exporting" : "Export JSON"}
+              </button>
+              <button
+                class="secondary-button"
+                type="button"
+                disabled={exportingReport}
+                on:click={() => exportCurrentReport("png")}
+              >
+                {exportingReport ? "Exporting" : "Export PNG"}
+              </button>
+            </div>
+            {#if reportError}
+              <div class="error" role="alert">{reportError}</div>
+            {/if}
+          </div>
+
+          {#if validation}
+            <div class="validation-grid" aria-label="Device validation">
+              {#each validation.checks as check}
+                <div
+                  class="validation-row"
+                  class:validation-pass={check.status === "pass"}
+                  class:validation-review={check.status === "review"}
+                  class:validation-fail={check.status === "fail"}
+                >
+                  <div>
+                    <span>{check.label}</span>
+                    <strong>{check.value}</strong>
+                  </div>
+                  <em>{validationTone(check.status)}</em>
+                </div>
+              {/each}
+            </div>
+          {/if}
+
           <dl class="result-list">
             <div class="result-row">
               <dt>Analysis ID</dt>
@@ -531,6 +650,12 @@
             {#each result.warnings as warning}
               <li>{warning}</li>
             {/each}
+          </ul>
+        {/if}
+
+        {#if dominantPeakNote}
+          <ul class="notice-list" aria-label="Analysis notes">
+            <li>{dominantPeakNote}</li>
           </ul>
         {/if}
       </div>

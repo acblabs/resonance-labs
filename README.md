@@ -19,7 +19,10 @@ Implemented:
 - FFT-domain bandpass filtering, spectral descriptors, dominant peak detection, Q-factor proxy, STFT, mel-spectrogram, transfer-response bands, RMS-envelope decay, and RT60 proxy.
 - Browser views for waveform, FFT, STFT, and mel-spectrogram.
 - Room descriptors for dry/live character, brightness, dominant mode, SNR, alignment, centroid, rolloff, and warnings.
+- Run-quality validation for alignment, SNR, duration, sample rate, peak amplitude, capture path, browser processing, and decay fit, with required checks weighted above advisory checks.
+- Exportable JSON and PNG acoustic reports from the Lab UI.
 - Deterministic `/api/v1/explain` fallback plus optional Gemini lab-assistant integration over compact structured DSP evidence only.
+- Public-safe real-room fixture manifest validation for reviewed report exports, including privacy-key checks and non-failing repeat coverage.
 - Docker Compose for the web/API pair.
 - Cloud Build checks, image builds, and opt-in Cloud Run deployment.
 - Local Git hook checks for README, CHANGELOG, FEATURES, and project SKILL.md freshness.
@@ -55,6 +58,8 @@ npm.cmd --workspace @resonancelab/web run dev
 ```
 
 Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. Do not use headphones or earbuds for active probing. The signal panel can switch between waveform, FFT, STFT, and mel-spectrogram views after the API returns.
+
+After a successful probe, export JSON or PNG reports from the Lab UI. JSON reports are the preferred public-safe artifact for device validation and real-room fixture manifests because they contain derived DSP evidence without raw WAV bytes.
 
 ## Docker Compose
 
@@ -124,6 +129,7 @@ python -m compileall packages services/api scripts
 python -m ruff check .
 python -m pytest
 python scripts/check_project_docs.py --all
+python scripts/validate_real_room_fixtures.py data/real_room_fixtures/manifest.example.json --allow-missing
 npm.cmd --workspace @resonancelab/web run check
 npm.cmd --workspace @resonancelab/web run build
 ```

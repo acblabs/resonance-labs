@@ -60,6 +60,8 @@ For each probe, extract and report:
 
 *   Alignment confidence and detected chirp start.
 *   Signal-to-noise ratio.
+*   Run-quality validation from alignment, SNR, duration, sample rate, peak amplitude, capture path, browser processing, and decay fit.
+*   High-Q caveats for very narrow dominant peaks; do not treat large Q proxies as calibrated room-mode certainty.
 *   Spectral centroid, bandwidth, rolloff, and floor.
 *   Transfer-response magnitude across configured bands.
 *   STFT and mel-spectrogram grids.
@@ -75,4 +77,5 @@ For each probe, extract and report:
 *   **Golden Tests**: Preserve tests for matched-filter alignment, FFT-domain bandpass attenuation, spectrogram dimensions, dominant peak detection, decay-fit edge cases, and the committed recorded-style WAV fixture.
 *   **Analytic Checks**: Maintain at least one closed-form damped-sinusoid regression test for peak frequency and exponential decay-rate recovery.
 *   **Real Fixtures**: Add small real room recordings only with metadata, tolerances, and clear caveats.
+*   **Report Fixtures**: Prefer reviewed JSON acoustic reports as public fixtures before committing raw audio; validate manifests for repeat, position, and room coverage.
 *   **LLM Boundary**: A lab-assistant model may explain compact structured DSP summaries, but raw WAV and full high-dimensional grids must not be sent to the hosted path by default.

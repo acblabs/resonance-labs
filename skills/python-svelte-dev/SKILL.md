@@ -38,11 +38,14 @@ For project context and repository layout details, refer to the root README, FEA
 *   **Styling Philosophy**: Use a clean lab-style UI optimized for signal and spectrogram visualization.
 *   **No Static Signal Placeholders**: Render waveforms and spectrograms dynamically with Canvas.
 *   **Room Fingerprint First**: Show the usable measurement experience immediately; do not turn the app into a marketing landing page.
+*   **Report Export**: Keep JSON and PNG acoustic reports based on derived analysis data. Do not include raw WAV bytes or PCM samples in report exports.
 *   **Honest Wording**: Describe outputs as acoustic fingerprints and reports, not spatial images or geometry reconstruction.
 
 ### 1.4 State Management & Safety Guardrails
 
 *   **Local State**: Keep transient probe state in Svelte component state. Store durable derived reports only when the user explicitly asks for export.
+*   **Run Validation**: Surface alignment, SNR, duration, sample-rate, peak-amplitude, capture-path, browser-processing, and decay-fit checks as quality signals.
+*   **Download Robustness**: Defer object URL cleanup after report download clicks so large PNG exports are not cancelled by strict browsers.
 *   **LLM Explanation Boundary**: Explanations must call `/api/v1/explain` with compact analysis JSON only. Do not upload the WAV blob to an LLM provider. Keep hosted calls disabled by default and use Cloud Run service identity/IAM for Vertex Gemini instead of API keys.
 *   **Acoustic Safety**: Cap the amplitude multiplier to `0.35` by default, keep chirps short, fade the signal, and keep the no-headphones warning visible.
 

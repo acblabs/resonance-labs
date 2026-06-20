@@ -1,0 +1,65 @@
+{
+  "schema_version": "resonancelab.real_room_fixtures.v1",
+  "fixtures": [
+    {
+      "id": "room-a-position-1-repeat-1",
+      "report_path": "exports/room-a-position-1-repeat-1.report.json",
+      "room_label": "room-a",
+      "position_label": "position-1",
+      "device_label": "device-a",
+      "browser": "desktop-chrome",
+      "session_label": "session-1",
+      "expected_quality": "pass"
+    },
+    {
+      "id": "room-a-position-1-repeat-2",
+      "report_path": "exports/room-a-position-1-repeat-2.report.json",
+      "room_label": "room-a",
+      "position_label": "position-1",
+      "device_label": "device-a",
+      "browser": "desktop-chrome",
+      "session_label": "session-1",
+      "expected_quality": "pass"
+    },
+    {
+      "id": "room-a-position-1-repeat-3",
+      "report_path": "exports/room-a-position-1-repeat-3.report.json",
+      "room_label": "room-a",
+      "position_label": "position-1",
+      "device_label": "device-a",
+      "browser": "desktop-chrome",
+      "session_label": "session-1",
+      "expected_quality": "pass"
+    },
+    {
+      "id": "room-a-position-2",
+      "report_path": "exports/room-a-position-2.report.json",
+      "room_label": "room-a",
+      "position_label": "position-2",
+      "device_label": "device-a",
+      "browser": "desktop-chrome",
+      "session_label": "session-1",
+      "expected_quality": "review"
+    },
+    {
+      "id": "room-b-position-1",
+      "report_path": "exports/room-b-position-1.report.json",
+      "room_label": "room-b",
+      "position_label": "position-1",
+      "device_label": "device-a",
+      "browser": "desktop-chrome",
+      "session_label": "session-1",
+      "expected_quality": "review"
+    },
+    {
+      "id": "room-a-position-1-noisy",
+      "report_path": "exports/room-a-position-1-noisy.report.json",
+      "room_label": "room-a",
+      "position_label": "position-1",
+      "device_label": "device-a",
+      "browser": "desktop-chrome",
+      "session_label": "session-1",
+      "expected_quality": "fail"
+    }
+  ]
+}

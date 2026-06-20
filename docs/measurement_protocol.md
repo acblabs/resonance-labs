@@ -11,6 +11,7 @@ For early manual tests:
 - Keep the probe geometry fixed: same device orientation, same surface, same height, and same room position.
 - Treat browser sample-rate changes as a new capture condition.
 - Treat alignment confidence below `0.20` or SNR below `12 dB` as a low-confidence measurement.
+- Prefer exported JSON reports for reviewed validation records; they contain derived DSP evidence without raw WAV bytes.
 - Keep at least `100 ms` of usable post-chirp audio for decay fitting. The default `1000 ms` post-roll is preferred because RT60 and peak estimates become fragile with short windows.
 - Move the device only when you intentionally want a second fingerprint from another position.
 

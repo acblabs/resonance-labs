@@ -6,6 +6,12 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Added
 
+- Lab UI JSON and PNG acoustic report export with derived DSP evidence, validation checks, descriptors, caveats, and optional explanation output.
+- Device run-quality validation for alignment, SNR, duration, sample rate, peak amplitude, capture path, browser processing, and decay fit.
+- Weighted validation scoring, high-Q proxy caveats, deferred report-download URL cleanup, and ellipsis-aware PNG text wrapping.
+- Device validation protocol, public-history cleanup runbook, and real-room fixture manifest validator.
+- Real-room fixture manifest example for reviewed public-safe report exports.
+- Golden public-safe report analysis fixture and validator tests for privacy and fixture coverage rules.
 - Room Acoustic Fingerprint product direction for chirp response, impulse/transfer evidence, spectrograms, decay, modes, and room descriptors.
 - Acoustic Image export roadmap covering polished PNG reports with response plots, spectrograms, decay bands, detected modes, descriptors, and caveats.
 - Structured `/api/v1/explain` endpoint with deterministic fallback summaries and optional Gemini lab-assistant calls over compact DSP evidence.
@@ -27,6 +33,7 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Changed
 
+- Lab layout now uses more of wide desktop viewports with sticky controls, a larger signal panel, and denser result grids.
 - Reoriented the app and docs toward room acoustic fingerprints and acoustic report generation.
 - Lab UI now presents room character, brightness, dominant mode, RT60 proxy, transfer bands, and acoustic hypotheses.
 - `/api/v1/models` now reports `phase_4_room_fingerprint`.

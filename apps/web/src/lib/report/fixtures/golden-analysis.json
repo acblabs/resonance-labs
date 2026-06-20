@@ -1,0 +1,109 @@
+{
+  "analysis_id": "12345678-90ab-cdef-1234-567890abcdef",
+  "status": "ok",
+  "audio": {
+    "content_type": "audio/wav",
+    "filename": "probe.wav",
+    "byte_count": 165000,
+    "sample_rate_hz": 48000,
+    "channels": 1,
+    "sample_width_bytes": 2,
+    "frame_count": 84000,
+    "sample_count": 84000,
+    "duration_seconds": 1.75,
+    "rms": 0.04,
+    "peak_amplitude": 0.42,
+    "dc_offset": 0.0001
+  },
+  "probe": {
+    "client_recorded_at": "2026-06-20T16:29:58Z",
+    "probe_config": {
+      "signal_type": "log_chirp",
+      "start_hz": 500,
+      "end_hz": 10000,
+      "duration_ms": 500,
+      "pre_roll_ms": 250,
+      "post_roll_ms": 1000,
+      "amplitude": 0.35,
+      "fade_ms": 10
+    },
+    "browser": {
+      "user_agent": "golden-report-fixture",
+      "audio_context_sample_rate_hz": 48000,
+      "media_track_settings": {
+        "echoCancellation": false,
+        "noiseSuppression": false,
+        "autoGainControl": false
+      },
+      "requested_constraints": {},
+      "capture_path": "audio_worklet"
+    }
+  },
+  "alignment": {
+    "method": "matched_filter_log_chirp",
+    "confidence": 0.72,
+    "estimated_latency_ms": 4,
+    "detected_start_seconds": 0.254,
+    "expected_start_seconds": 0.25,
+    "notes": ["matched filter"]
+  },
+  "dsp": {
+    "bandpass_low_hz": 300,
+    "bandpass_high_hz": 12500,
+    "signal_to_noise_db": 23.5,
+    "fft": {
+      "centroid_hz": 4200,
+      "bandwidth_hz": 1800,
+      "rolloff_hz": 8400,
+      "spectral_floor_db": -72,
+      "series": {
+        "frequency_bins_hz": [500, 1000, 2000],
+        "magnitude_db": [-20, -12, -18]
+      }
+    },
+    "stft": {
+      "kind": "stft",
+      "times_seconds": [0, 0.5],
+      "frequency_bins_hz": [500, 1000],
+      "magnitude_db": [
+        [-80, -40],
+        [-70, -35]
+      ]
+    },
+    "mel_spectrogram": {
+      "kind": "mel",
+      "times_seconds": [0, 0.5],
+      "frequency_bins_hz": [500, 1000],
+      "magnitude_db": [
+        [-80, -40],
+        [-70, -35]
+      ]
+    },
+    "transfer_response": [
+      {
+        "start_hz": 500,
+        "end_hz": 1000,
+        "center_hz": 750,
+        "mean_db": -16,
+        "peak_db": -12
+      }
+    ],
+    "dominant_peaks": [
+      {
+        "frequency_hz": 2063.2,
+        "magnitude_db": -9,
+        "prominence_db": 15,
+        "q_factor": 1175
+      }
+    ],
+    "decay": {
+      "method": "rms_envelope_log_linear",
+      "decay_rate_per_second": 8.45,
+      "rt60_seconds": 0.817,
+      "fit_r2": 0.64,
+      "window_start_seconds": 0.859,
+      "window_end_seconds": 1.75
+    }
+  },
+  "warnings": []
+}

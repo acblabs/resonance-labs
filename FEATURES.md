@@ -52,11 +52,17 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 
 - First-screen Room Acoustic Fingerprint workflow in the Lab UI.
 - Acoustic Image panel with waveform, FFT, STFT, and mel-spectrogram views.
+- Wider responsive Lab layout with sticky desktop controls and larger signal plots.
 - Room character descriptor from the RT60 proxy: dry, balanced, or live.
 - Brightness descriptor from spectral centroid: dark, neutral, or bright.
 - Dominant low/mid-frequency mode display with Q-factor when available.
+- Run-quality validation for alignment, SNR, duration, sample rate, peak amplitude, capture path, browser processing, and decay fit, with required checks weighted above advisory checks.
+- High-Q dominant peak caveats for very narrow Q proxies that may be device- or tonal-artifact-sensitive.
 - Transfer-response band table for broad spectral coloration.
 - Decay-window and decay-fit diagnostics.
+- JSON acoustic report export with schema version, descriptors, validation results, compact DSP evidence, caveats, and optional explanation output.
+- PNG acoustic report export with summary metrics, mel acoustic image, transfer bands, dominant modes, validation checks, and caveats.
+- Golden public-safe report analysis fixture covering report-building and validation semantics.
 - Structured `/api/v1/explain` endpoint for compact DSP evidence.
 - Lab UI explanation panel for observations, acoustic hypotheses, caveats, and next-measurement guidance.
 - Optional Gemini lab-assistant path using `gemini-3.1-pro-preview`, `global`, and `HIGH` thinking level through Cloud Run service identity.
@@ -75,24 +81,25 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 - Cloud Build substitutions for the API service can enable Vertex Gemini explanations without introducing another Cloud Run service.
 - `.gcloudignore` and `.gitignore` coverage for local GCP notes, service account key files, private datasets, and generated artifacts.
 - Public-safe GCP deployment guide in `docs/gcp_cloud_run.md`.
+- Public-history cleanup runbook for private artifact removal coordination.
+- Real-room fixture manifest example and validator for reviewed public-safe report exports, including privacy-key checks and non-failing repeat coverage.
 
 ## Planned DSP Features
 
 - Better direct-path and room-response caveat reporting.
 - Repeated chirps and synchronous averaging.
 - MFCC summary statistics.
-- Real recorded WAV fixtures from multiple devices, rooms, and sessions, tracked in `docs/real_recording_fixtures.md`.
+- Real recorded report fixtures from multiple devices, rooms, and sessions, tracked in `docs/real_recording_fixtures.md`.
 - Side-by-side chirp and tap feature comparison for future acoustic experiments.
 - More explicit impulse-response and deconvolved-response visualization.
 
 ## Planned Room Fingerprint Features
 
-- Polished PNG/acoustic image export with chirp response, deconvolved impulse proxy, STFT or mel spectrogram, decay bands, detected modes, descriptors, and caveats.
 - Room-to-room comparison using repeated measurements from fixed device positions.
 - Position-to-position comparison within one room to show how the acoustic fingerprint changes.
 - Low-frequency mode grouping and warning labels for unstable or unresolved peaks.
 - Decay-band visualization for low, mid, and high frequency ranges.
-- Exportable JSON report alongside the PNG for reproducible measurement notes.
+- Side-by-side comparison of exported JSON reports.
 
 ## Planned Lab Assistant Features
 

@@ -1,4 +1,4 @@
-# Real Recording Fixture TODO
+# Real Recording Fixtures
 
 The current fixture set has two roles:
 
@@ -7,34 +7,39 @@ The current fixture set has two roles:
 
 Neither fixture is a real device/session recording. They protect DSP code paths, but they do not validate real-world room fingerprint stability.
 
-## TODO: Add Real WAV Fixtures
+## Collection Workflow
 
-Add small committed PCM WAV fixtures from real recordings when measurement data is available.
+The first public real-room set should use reviewed JSON acoustic reports from the Lab UI. Raw WAV recordings should stay private unless a specific release decision approves a small, consented, documented fixture.
 
 Minimum first set:
 
-- Three repeated chirp captures from one room position.
+- Three non-failing repeated chirp captures from one room position.
 - One capture from a second position in the same room.
 - One capture from a different room.
 - One noisy or low-confidence recording that should trigger warnings.
 
-Each fixture should include sidecar JSON metadata:
+Each fixture manifest entry should include:
 
 - Device model or anonymized device label.
 - Browser and operating system.
-- Sample rate and capture path.
-- Probe configuration.
 - Room label and position label.
-- Volume setting or repeatable volume note.
-- Distance/orientation notes.
-- Expected broad DSP behavior, such as alignment confidence range, SNR range, dominant peak band, and decay range.
+- Session label.
+- Expected quality: `pass`, `review`, or `fail`.
+- Path to a reviewed JSON acoustic report export.
 
 Acceptance criteria:
 
-- WAV files are short enough to keep the repo lightweight.
-- Tests load the committed WAV bytes from disk.
+- Manifest validates with `scripts/validate_real_room_fixtures.py`.
+- Report exports do not contain raw WAV bytes or PCM samples.
+- Deliberately failing/noisy fixtures do not count toward the three-repeat stability gate.
 - Expected assertions use tolerances and ranges rather than exact values.
 - The tests do not claim room identity or geometry reconstruction.
 - Fixtures cover more than one device/session before they are used for product claims.
 
-This TODO should remain open until real recordings exist across multiple devices, browsers, rooms, and positions.
+Start from `data/real_room_fixtures/manifest.example.json`, then validate the collected manifest:
+
+```powershell
+python scripts/validate_real_room_fixtures.py data/real_room_fixtures/manifest.json --strict-coverage
+```
+
+This remains open until real recordings exist across multiple devices, browsers, rooms, and positions.
