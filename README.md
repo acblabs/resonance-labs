@@ -54,6 +54,8 @@ Phase 4 dataset and baseline tooling implemented:
 - Baseline artifact export with `joblib`, feature schema, dropped-feature audit, quality audit, metrics JSON, and generated model card.
 - Compiled Phase 4 benchmark command for session, glass, device, and browser holdout regimes.
 - Private capture endpoint and operator-only web mode for staging labeled captures into a GCS inbox.
+- Dedicated Cloud Run operator capture target for deploying separate capture web/API services with
+  Secret Manager operator-token loading and private GCS inbox writes.
 - Capture records enforce server raw-audio policy, validate manifest fragments before publishing, and
   defer bucket/quality inclusion policy to finalization and training.
 - Manifest finalization tooling that turns capture inbox fragments into immutable dataset snapshots.
@@ -109,7 +111,13 @@ python scripts/run_phase4_benchmark.py --manifest path/to/private_manifest.featu
 
 The trainer runs repeated grouped holdouts by default and exports the first split's model. Use `--group-by glass_id`, `--group-by device_id`, and `--group-by browser_id` for separate generalization reports. See `docs/glass_recording_protocol.md`, `docs/phase4_baseline.md`, and `docs/schemas/phase4_dataset_manifest.schema.json`.
 
-Private GCP runs can use `cloudbuild.phase4.yaml` to finalize a private capture inbox into an immutable snapshot, or train from an existing snapshot, then upload generated features, model artifacts, and reports back to private GCS without committing them. Do not train from a prefix that is receiving live captures.
+Private Cloud Run collection should use a dedicated operator deployment, not the public demo. Set
+`_DEPLOY_TARGET=cloud-run-capture` in a private Cloud Build trigger or manual build, configure the
+capture API with a private GCS bucket and Secret Manager operator-token secret, and keep the public
+services deployed with capture disabled. After collection, use `cloudbuild.phase4.yaml` to finalize a
+private capture inbox into an immutable snapshot, or train from an existing snapshot, then upload
+generated features, model artifacts, and reports back to private GCS without committing them. Do not
+train from a prefix that is receiving live captures.
 
 ## Docker Compose
 
@@ -168,7 +176,7 @@ Use `[skip docs]` in a commit message only when a docs update would be noise. Th
 
 ## Cloud Build
 
-`cloudbuild.yaml` is the GCP CI/build entry point. It runs project hygiene checks, API tests, SvelteKit checks/builds, and builds the API and web container images. By default it does not push or deploy; a main-branch Cloud Build trigger can set `_DEPLOY_TARGET=cloud-run` to push images, deploy `resonancelab-api` and `resonancelab-web` to second-generation Cloud Run services with startup CPU boost, wire `PUBLIC_API_URL`, and update API CORS.
+`cloudbuild.yaml` is the GCP CI/build entry point. It runs project hygiene checks, API tests, SvelteKit checks/builds, and builds the API and web container images. By default it does not push or deploy; a main-branch Cloud Build trigger can set `_DEPLOY_TARGET=cloud-run` to push images, deploy `resonancelab-api` and `resonancelab-web` to second-generation Cloud Run services with startup CPU boost, wire `PUBLIC_API_URL`, keep Phase 4 capture disabled, and update API CORS. A private operator trigger can set `_DEPLOY_TARGET=cloud-run-capture` to deploy separate `resonancelab-api-capture` and `resonancelab-web-capture` services for labeled Phase 4 recording into private GCS.
 
 Keep project IDs, service account details, and deployment-specific substitutions in GCP trigger settings or ignored local files, not in the public repo. See `docs/gcp_cloud_run.md`.
 

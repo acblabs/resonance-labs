@@ -94,6 +94,8 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - Public-safe data, benchmark, and model-card landing zones without committing private audio.
 - Private dataset capture endpoint gated by operator token and explicit capture settings.
 - Operator-only web capture panel, hidden unless `PUBLIC_PHASE4_CAPTURE_ENABLED=true`, for saving labeled probe captures.
+- Dedicated Cloud Run operator capture target that deploys separate capture API/web services, loads
+  the operator token from Secret Manager, and writes labeled captures to a private GCS inbox.
 - Private capture inbox layout for WAV, analysis JSON, and manifest-ready `.record.json` fragments.
 - Server-enforced raw-audio capture policy, capture-fragment validation, and idempotency keys for
   duplicate-safe operator retries.
@@ -104,11 +106,14 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 
 - Cloud Build defaults that run checks and image builds without deploying from PR/default triggers.
 - Main-trigger opt-in Cloud Run deployment through `_DEPLOY_TARGET=cloud-run`.
+- Private operator opt-in Cloud Run deployment through `_DEPLOY_TARGET=cloud-run-capture`.
 - Artifact Registry push steps gated behind the deploy target.
 - Cloud Run API and web service deployment with configurable memory, CPU, concurrency, timeout, min-instance, and max-instance substitutions.
 - Explicit second-generation Cloud Run execution environment and startup CPU boost for API and web deploys.
 - Runtime discovery of the deployed API URL before deploying the web service.
 - API CORS update using both generated Cloud Run web service URL forms plus optional extra origins.
+- Public Cloud Run deploys explicitly keep Phase 4 capture disabled, while capture deploys route the
+  web service to the capture API and expose the capture panel only on the operator service.
 - `.gcloudignore` and `.gitignore` coverage for local GCP notes, service account key files, private datasets, and generated model artifacts.
 - Public-safe GCP deployment guide in `docs/gcp_cloud_run.md`.
 

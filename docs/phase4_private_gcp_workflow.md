@@ -49,8 +49,11 @@ supported when `_RUN_EXTRACTION=true`; the private Cloud Build pipeline writes a
 
 ## Operator Capture Flow
 
-1. Enable the private capture API only on a private deployment or local operator environment.
-2. Run probes in the Lab UI with `PUBLIC_PHASE4_CAPTURE_ENABLED=true`.
+1. Enable the private capture API only on a private deployment or local operator environment. For
+   Cloud Run, prefer the dedicated `_DEPLOY_TARGET=cloud-run-capture` path in `cloudbuild.yaml`,
+   which deploys separate capture API and web services.
+2. Run probes in the Lab UI with `PUBLIC_PHASE4_CAPTURE_ENABLED=true`. The public Cloud Run demo
+   should continue to deploy with `PUBLIC_PHASE4_CAPTURE_ENABLED=false`.
 3. Save labeled captures to the private API. The API analyzes the WAV, writes analysis JSON, writes
    the WAV only when the server allows `PHASE4_CAPTURE_STORE_RAW_AUDIO=true`, validates the
    manifest-ready fragment, and writes one `.record.json` fragment last under
@@ -66,6 +69,37 @@ gcloud storage rsync --recursive path/to/snapshot gs://<private-bucket>/phase4/d
 ```
 
 5. Train from the finalized snapshot, not from the inbox.
+
+## Operator Cloud Run Capture Deployment
+
+Use the normal public Cloud Run deployment for demos and the dedicated capture deployment for private
+collection. A capture deploy sets:
+
+```text
+_DEPLOY_TARGET=cloud-run-capture
+_CAPTURE_WEB_SERVICE=resonancelab-web-capture
+_CAPTURE_API_SERVICE=resonancelab-api-capture
+_CAPTURE_RUN_SERVICE_ACCOUNT=resonancelab-capture-run
+_PHASE4_CAPTURE_GCS_BUCKET=<private-bucket>
+_PHASE4_CAPTURE_INBOX_PREFIX=phase4/inbox
+_PHASE4_CAPTURE_OPERATOR_TOKEN_SECRET=phase4-capture-operator-token
+```
+
+The capture API receives `PHASE4_CAPTURE_ENABLED=true`, reads the operator token from Secret
+Manager, and writes to the private GCS inbox through its Cloud Run service account. The capture web
+service receives `PUBLIC_PHASE4_CAPTURE_ENABLED=true` and points at the capture API URL. The normal
+public services are deployed with capture disabled.
+
+Keep these identities separate:
+
+- `resonancelab-run`: public web/API runtime identity, no private capture bucket write access.
+- `resonancelab-capture-run`: capture API runtime identity, private bucket write access and access
+  to the operator-token secret.
+
+The capture API can remain unauthenticated at the Cloud Run ingress layer so mobile browsers can call
+it directly, but the dataset capture endpoint still requires the operator bearer token. Do not
+publish the operator URL, do not commit the bucket or token name when those values reveal private
+infrastructure, and rotate the token after collection campaigns.
 
 ## Private Cloud Build Run
 

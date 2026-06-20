@@ -20,6 +20,8 @@ All notable changes to ResonanceLab will be documented in this file.
 - Phase 4 training and feature-extraction scripts.
 - Private Phase 4 capture endpoint with operator-token gating and GCS/local inbox storage.
 - Operator-only Phase 4 capture panel for saving labeled probe captures from the Lab UI.
+- Dedicated Cloud Run Phase 4 operator capture deploy target with separate capture services, Secret
+  Manager operator-token loading, private GCS inbox configuration, and capture-specific CORS.
 - Phase 4 manifest finalization script for turning capture inbox fragments into immutable dataset snapshots.
 - Private Phase 4 Cloud Build pipeline for GCS-hosted datasets, generated features, model artifacts, and benchmark reports.
 - Phase 4 recording protocol, baseline workflow, dataset manifest JSON Schema, example manifest, model-card template, benchmark result landing zone, and evaluation notebook skeleton.
@@ -27,6 +29,8 @@ All notable changes to ResonanceLab will be documented in this file.
 - Cloud Run deployment path in Cloud Build, gated by `_DEPLOY_TARGET=cloud-run` so default and PR builds do not deploy.
 - Cloud Run API and web deploys now explicitly use the second-generation execution environment with startup CPU boost enabled.
 - Cloud Run API CORS now allows both generated Cloud Run web URL forms, and the web service uses the project-number API URL.
+- Public Cloud Run deploys now force Phase 4 capture off in runtime env, while the private capture
+  deploy target enables it only on separate operator services.
 - GCP Cloud Run deployment guide covering private trigger substitutions, service account hygiene, and public-safe project configuration.
 - `.gcloudignore` coverage for local GCP notes, service account key files, private datasets, and generated model artifacts.
 - Phase 3 browser-local calibration profiles backed by IndexedDB.

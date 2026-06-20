@@ -6,7 +6,10 @@ substitutions:
   _API_IMAGE: resonancelab-api
   _WEB_SERVICE: resonancelab-web
   _API_SERVICE: resonancelab-api
+  _CAPTURE_WEB_SERVICE: resonancelab-web-capture
+  _CAPTURE_API_SERVICE: resonancelab-api-capture
   _RUN_SERVICE_ACCOUNT: resonancelab-run
+  _CAPTURE_RUN_SERVICE_ACCOUNT: resonancelab-capture-run
   _WEB_MEMORY: 512Mi
   _WEB_CPU: "1"
   _WEB_CONCURRENCY: "80"
@@ -22,6 +25,11 @@ substitutions:
   _API_MAX_UPLOAD_BYTES: "8388608"
   _API_MAX_RECORDING_SECONDS: "8.0"
   _EXTRA_CORS_ORIGINS: none
+  _CAPTURE_EXTRA_CORS_ORIGINS: none
+  _PHASE4_CAPTURE_GCS_BUCKET: none
+  _PHASE4_CAPTURE_INBOX_PREFIX: phase4/inbox
+  _PHASE4_CAPTURE_STORE_RAW_AUDIO: "true"
+  _PHASE4_CAPTURE_OPERATOR_TOKEN_SECRET: none
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -76,10 +84,13 @@ steps:
     args:
       - -c
       - |
-        if [ "${_DEPLOY_TARGET}" != "cloud-run" ]; then
+        case "${_DEPLOY_TARGET}" in
+          cloud-run|cloud-run-capture) ;;
+          *)
           echo "Skipping API image push because _DEPLOY_TARGET=${_DEPLOY_TARGET}."
           exit 0
-        fi
+          ;;
+        esac
         docker push "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_API_IMAGE}:$BUILD_ID"
 
   - id: push-web-image
@@ -88,10 +99,13 @@ steps:
     args:
       - -c
       - |
-        if [ "${_DEPLOY_TARGET}" != "cloud-run" ]; then
+        case "${_DEPLOY_TARGET}" in
+          cloud-run|cloud-run-capture) ;;
+          *)
           echo "Skipping web image push because _DEPLOY_TARGET=${_DEPLOY_TARGET}."
           exit 0
-        fi
+          ;;
+        esac
         docker push "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_WEB_IMAGE}:$BUILD_ID"
 
   - id: deploy-api
@@ -119,7 +133,7 @@ steps:
           --min-instances "${_API_MIN_INSTANCES}" \
           --max-instances "${_API_MAX_INSTANCES}" \
           --timeout "${_API_TIMEOUT}" \
-          --set-env-vars "RESONANCELAB_ENV=cloud,RESONANCELAB_MAX_UPLOAD_BYTES=${_API_MAX_UPLOAD_BYTES},RESONANCELAB_MAX_RECORDING_SECONDS=${_API_MAX_RECORDING_SECONDS}"
+          --set-env-vars "RESONANCELAB_ENV=cloud,RESONANCELAB_MAX_UPLOAD_BYTES=${_API_MAX_UPLOAD_BYTES},RESONANCELAB_MAX_RECORDING_SECONDS=${_API_MAX_RECORDING_SECONDS},PHASE4_CAPTURE_ENABLED=false"
 
   - id: deploy-web
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
@@ -147,7 +161,7 @@ steps:
           --min-instances "${_WEB_MIN_INSTANCES}" \
           --max-instances "${_WEB_MAX_INSTANCES}" \
           --timeout "${_WEB_TIMEOUT}" \
-          --set-env-vars "PUBLIC_API_URL=$${API_URL},RESONANCELAB_ENV=cloud"
+          --set-env-vars "PUBLIC_API_URL=$${API_URL},PUBLIC_PHASE4_CAPTURE_ENABLED=false,RESONANCELAB_ENV=cloud"
 
   - id: update-api-cors
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
@@ -171,5 +185,94 @@ steps:
         fi
 
         gcloud run services update "${_API_SERVICE}" \
+          --region "${_REGION}" \
+          --update-env-vars "^|^RESONANCELAB_CORS_ORIGINS=$${CORS_ORIGINS}"
+
+  - id: deploy-capture-api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "${_DEPLOY_TARGET}" != "cloud-run-capture" ]; then
+          echo "Skipping capture API deploy because _DEPLOY_TARGET=${_DEPLOY_TARGET}."
+          exit 0
+        fi
+        if [ "${_PHASE4_CAPTURE_GCS_BUCKET}" = "none" ] || [ -z "${_PHASE4_CAPTURE_GCS_BUCKET}" ]; then
+          echo "_PHASE4_CAPTURE_GCS_BUCKET must name a private bucket for cloud-run-capture deploys."
+          exit 1
+        fi
+        if [ "${_PHASE4_CAPTURE_OPERATOR_TOKEN_SECRET}" = "none" ] || [ -z "${_PHASE4_CAPTURE_OPERATOR_TOKEN_SECRET}" ]; then
+          echo "_PHASE4_CAPTURE_OPERATOR_TOKEN_SECRET must name a Secret Manager secret for cloud-run-capture deploys."
+          exit 1
+        fi
+
+        gcloud run deploy "${_CAPTURE_API_SERVICE}" \
+          --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_API_IMAGE}:$BUILD_ID" \
+          --region "${_REGION}" \
+          --platform managed \
+          --execution-environment=gen2 \
+          --cpu-boost \
+          --allow-unauthenticated \
+          --service-account "${_CAPTURE_RUN_SERVICE_ACCOUNT}@$PROJECT_ID.iam.gserviceaccount.com" \
+          --memory "${_API_MEMORY}" \
+          --cpu "${_API_CPU}" \
+          --concurrency "${_API_CONCURRENCY}" \
+          --min-instances "${_API_MIN_INSTANCES}" \
+          --max-instances "${_API_MAX_INSTANCES}" \
+          --timeout "${_API_TIMEOUT}" \
+          --set-env-vars "^|^RESONANCELAB_ENV=cloud|RESONANCELAB_MAX_UPLOAD_BYTES=${_API_MAX_UPLOAD_BYTES}|RESONANCELAB_MAX_RECORDING_SECONDS=${_API_MAX_RECORDING_SECONDS}|PHASE4_CAPTURE_ENABLED=true|PHASE4_CAPTURE_GCS_BUCKET=${_PHASE4_CAPTURE_GCS_BUCKET}|PHASE4_CAPTURE_INBOX_PREFIX=${_PHASE4_CAPTURE_INBOX_PREFIX}|PHASE4_CAPTURE_STORE_RAW_AUDIO=${_PHASE4_CAPTURE_STORE_RAW_AUDIO}" \
+          --set-secrets "PHASE4_CAPTURE_OPERATOR_TOKEN=${_PHASE4_CAPTURE_OPERATOR_TOKEN_SECRET}:latest"
+
+  - id: deploy-capture-web
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "${_DEPLOY_TARGET}" != "cloud-run-capture" ]; then
+          echo "Skipping capture web deploy because _DEPLOY_TARGET=${_DEPLOY_TARGET}."
+          exit 0
+        fi
+
+        CAPTURE_API_URL="https://${_CAPTURE_API_SERVICE}-$PROJECT_NUMBER.${_REGION}.run.app"
+        gcloud run deploy "${_CAPTURE_WEB_SERVICE}" \
+          --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_WEB_IMAGE}:$BUILD_ID" \
+          --region "${_REGION}" \
+          --platform managed \
+          --execution-environment=gen2 \
+          --cpu-boost \
+          --allow-unauthenticated \
+          --service-account "${_RUN_SERVICE_ACCOUNT}@$PROJECT_ID.iam.gserviceaccount.com" \
+          --memory "${_WEB_MEMORY}" \
+          --cpu "${_WEB_CPU}" \
+          --concurrency "${_WEB_CONCURRENCY}" \
+          --min-instances "${_WEB_MIN_INSTANCES}" \
+          --max-instances "${_WEB_MAX_INSTANCES}" \
+          --timeout "${_WEB_TIMEOUT}" \
+          --set-env-vars "PUBLIC_API_URL=$${CAPTURE_API_URL},PUBLIC_PHASE4_CAPTURE_ENABLED=true,RESONANCELAB_ENV=cloud"
+
+  - id: update-capture-api-cors
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "${_DEPLOY_TARGET}" != "cloud-run-capture" ]; then
+          echo "Skipping capture API CORS update because _DEPLOY_TARGET=${_DEPLOY_TARGET}."
+          exit 0
+        fi
+
+        CAPTURE_WEB_URL="$$(gcloud run services describe "${_CAPTURE_WEB_SERVICE}" --region "${_REGION}" --format='value(status.url)')"
+        CAPTURE_WEB_CANONICAL_URL="https://${_CAPTURE_WEB_SERVICE}-$PROJECT_NUMBER.${_REGION}.run.app"
+        CORS_ORIGINS="$${CAPTURE_WEB_URL}"
+        if [ "$${CAPTURE_WEB_CANONICAL_URL}" != "$${CAPTURE_WEB_URL}" ]; then
+          CORS_ORIGINS="$${CORS_ORIGINS},$${CAPTURE_WEB_CANONICAL_URL}"
+        fi
+        if [ "${_CAPTURE_EXTRA_CORS_ORIGINS}" != "none" ]; then
+          CORS_ORIGINS="$${CORS_ORIGINS},${_CAPTURE_EXTRA_CORS_ORIGINS}"
+        fi
+
+        gcloud run services update "${_CAPTURE_API_SERVICE}" \
           --region "${_REGION}" \
           --update-env-vars "^|^RESONANCELAB_CORS_ORIGINS=$${CORS_ORIGINS}"
