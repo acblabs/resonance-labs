@@ -91,6 +91,8 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Fixed
 
+- Dataset Capture numeric inputs now accept browser-coerced number values, unblocking Save Dataset
+  Capture when fill percent or mass fields are entered as number inputs.
 - Calibration cards no longer describe saved anchors as having no samples when only the optional peak summary is unavailable.
 - Analyze uploads are read in bounded chunks before size validation.
 - SNR estimation now excludes early detected chirp energy from the noise window.

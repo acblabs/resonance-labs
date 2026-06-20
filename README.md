@@ -54,6 +54,8 @@ Phase 4 dataset and baseline tooling implemented:
 - Baseline artifact export with `joblib`, feature schema, dropped-feature audit, quality audit, metrics JSON, and generated model card.
 - Compiled Phase 4 benchmark command for session, glass, device, and browser holdout regimes.
 - Private capture endpoint and operator-only web mode for staging labeled captures into a GCS inbox.
+- Dataset Capture form handling for browser number inputs such as fill percent and optional mass
+  fields.
 - Dedicated Cloud Run operator capture target for deploying separate capture web/API services with
   Secret Manager operator-token loading and private GCS inbox writes.
 - Capture records enforce server raw-audio policy, validate manifest fragments before publishing, and

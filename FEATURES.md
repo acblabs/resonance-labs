@@ -94,6 +94,7 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - Public-safe data, benchmark, and model-card landing zones without committing private audio.
 - Private dataset capture endpoint gated by operator token and explicit capture settings.
 - Operator-only web capture panel, hidden unless `PUBLIC_PHASE4_CAPTURE_ENABLED=true`, for saving labeled probe captures.
+- Dataset capture form accepts browser number-input values for fill percent and optional mass fields.
 - Dedicated Cloud Run operator capture target that deploys separate capture API/web services, loads
   the operator token from Secret Manager, and writes labeled captures to a private GCS inbox.
 - Private capture inbox layout for WAV, analysis JSON, and manifest-ready `.record.json` fragments.

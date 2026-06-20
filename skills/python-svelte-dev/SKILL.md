@@ -61,6 +61,7 @@ For project context, repository layout details, and phase gates, refer to the [i
 *   **Storage Etiquette**: Store derived DSP features by default. Request explicit user opt-in before storing raw audio blobs to prevent quota exhaustion.
 *   **Calibration Actions**: Anchor controls should use explicit command labels such as "Save Empty" or "Save Full" rather than relying on status-only anchor cards, and every save target needs a clear/reset path for accidental captures.
 *   **Free-Air Controls**: Treat a close match to the saved free-air reference as a no-glass/reference-match result, not as a nearest-glass-anchor fill estimate.
+*   **Dataset Capture Form State**: Browser `type="number"` fields can bind as numbers rather than strings in Svelte. Dataset capture helpers must tolerate `string | number | null | undefined` for fill percent and optional mass fields so valid zero-valued labels do not disable capture saves.
 *   **Acoustic Safety**: Protect users and equipment by enforcing:
     *   Volume limits (e.g., capping the amplitude multiplier to `0.35` by default).
     *   Short probe durations (e.g., maximum chirp/sweep duration of 500-1000ms).

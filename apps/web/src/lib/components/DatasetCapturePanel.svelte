@@ -7,6 +7,8 @@
     ProbeMetadata,
   } from "$lib/audio/types";
 
+  type NumericInputValue = string | number | null | undefined;
+
   export let result: AnalysisResponse | null = null;
   export let wavBlob: Blob | null = null;
   export let metadata: ProbeMetadata | null = null;
@@ -24,10 +26,10 @@
   let material = "";
   let geometry = "";
   let notes = "";
-  let fillPercent = "";
-  let emptyMass = "";
-  let fullMass = "";
-  let currentMass = "";
+  let fillPercent: NumericInputValue = "";
+  let emptyMass: NumericInputValue = "";
+  let fullMass: NumericInputValue = "";
+  let currentMass: NumericInputValue = "";
   let storeAudio = true;
   let saving = false;
   let captureStatus = "Ready";
@@ -135,12 +137,12 @@
       : null;
   }
 
-  function optionalNumber(value: string): number | undefined {
-    const text = value.trim();
-    if (!text) {
+  function optionalNumber(value: NumericInputValue): number | undefined {
+    if (value === null || value === undefined || value === "") {
       return undefined;
     }
-    const numericValue = Number(text);
+    const numericValue =
+      typeof value === "number" ? value : Number(value.trim());
     return Number.isFinite(numericValue) ? numericValue : undefined;
   }
 
