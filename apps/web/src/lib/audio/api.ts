@@ -4,6 +4,7 @@ import type {
   AnalysisResponse,
   DatasetCaptureRequest,
   DatasetCaptureResponse,
+  LlmExplainResponse,
   ProbeConfigEnvelope,
   ProbeMetadata,
 } from "./types";
@@ -51,6 +52,34 @@ export async function analyzeProbe(
   }
 
   return response.json() as Promise<AnalysisResponse>;
+}
+
+export async function explainProbeResult(
+  analysis: AnalysisResponse,
+  calibration: unknown,
+  referenceComparison: unknown,
+): Promise<LlmExplainResponse> {
+  const response = await fetch(`${apiBaseUrl()}/api/v1/explain`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      analysis,
+      calibration,
+      reference_comparison: referenceComparison,
+      include_raw_audio: false,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Explain request failed with HTTP ${response.status}: ${errorText}`,
+    );
+  }
+
+  return response.json() as Promise<LlmExplainResponse>;
 }
 
 export function isPhase4CaptureEnabled(): boolean {

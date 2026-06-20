@@ -1,6 +1,6 @@
 # ResonanceLab
 
-ResonanceLab is an open-source, sound-only active acoustic sensing platform. Phase 1 proved the browser-to-API loop, Phase 2 added a NumPy DSP MVP, Phase 3 added a calibration-first browser demo with local fill-level estimates from empty, 50%, and full anchors, and Phase 4 adds the offline dataset and scikit-learn baseline training path.
+ResonanceLab is an open-source, sound-only active acoustic sensing platform. Phase 1 proved the browser-to-API loop, Phase 2 added a NumPy DSP MVP, Phase 3 added a calibration-first browser demo with local fill-level estimates from empty, 50%, and full anchors, and the current Phase 4 work is focused on reference comparison, material hypotheses, and LLM-assisted interpretation before supervised model training.
 
 ## Phase 1 Status
 
@@ -45,7 +45,7 @@ Phase 3 calibration demo implemented:
 - Calibration workflow split into a dedicated Svelte component to keep the probe screen maintainable.
 - Calibration math unit tests for incomplete profiles, interpolation, baseline beating, canonical capture signatures, and low-quality probes.
 
-Phase 4 dataset and baseline tooling implemented:
+Supervised dataset and baseline tooling implemented, but deferred behind the current reference-comparison milestone:
 
 - Private dataset manifest format for fill-level recordings with session, glass, device, browser, room, and quality metadata.
 - Canonical DSP-to-tabular feature extraction for saved API analysis JSON or raw WAV records, using fixed mel summaries and excluding raw STFT-bin model inputs.
@@ -56,8 +56,14 @@ Phase 4 dataset and baseline tooling implemented:
 - Private capture endpoint and operator-only web mode for staging labeled captures into a GCS inbox.
 - Dataset Capture form handling for browser number inputs such as fill percent and optional mass
   fields.
-- Dedicated Cloud Run operator capture target for deploying separate capture web/API services with
-  Secret Manager operator-token loading and private GCS inbox writes.
+- Browser-local known-object references with weighted DSP distance comparison against free-air,
+  calibration anchors, and saved material examples.
+- `/api/v1/explain` endpoint and Lab UI explanation panel that summarize compact DSP, calibration,
+  and reference-comparison evidence without sending raw WAV to the LLM path.
+- Optional Gemini lab-assistant integration using `gemini-3.1-pro-preview`, global location, and
+  high thinking level through Cloud Run service identity when explicitly enabled.
+- Optional single-service Cloud Run capture mode for the existing web/API pair, with Secret Manager
+  operator-token loading and private GCS inbox writes when explicitly enabled.
 - Capture records enforce server raw-audio policy, validate manifest fragments before publishing, and
   defer bucket/quality inclusion policy to finalization and training.
 - Manifest finalization tooling that turns capture inbox fragments into immutable dataset snapshots.
@@ -68,7 +74,7 @@ Still manual:
 - Real-device mobile testing on Android Chrome and iOS Safari.
 - HTTPS test setup for mobile microphone permissions outside localhost.
 - Real-device calibrated validation across sessions, vessels, rooms, and browsers.
-- Collection of the initial private Phase 4 dataset.
+- Reference-comparison and material-hypothesis workflow before supervised dataset collection.
 
 ## Quickstart
 
@@ -103,7 +109,7 @@ Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and kee
 
 ## Phase 4 Baseline
 
-Phase 4 training is offline. Keep private raw audio and feature files out of git unless explicitly approved. The checked-in example manifest documents schema shape only and is not large enough to train.
+Supervised Phase 4 training is offline and is now a later milestone. Keep private raw audio and feature files out of git unless explicitly approved. The checked-in example manifest documents schema shape only and is not large enough to train.
 
 ```powershell
 python scripts/extract_phase4_features.py --manifest path/to/private_manifest.json --output-dir path/to/private_features --manifest-output path/to/private_manifest.features.json
@@ -113,13 +119,14 @@ python scripts/run_phase4_benchmark.py --manifest path/to/private_manifest.featu
 
 The trainer runs repeated grouped holdouts by default and exports the first split's model. Use `--group-by glass_id`, `--group-by device_id`, and `--group-by browser_id` for separate generalization reports. See `docs/glass_recording_protocol.md`, `docs/phase4_baseline.md`, and `docs/schemas/phase4_dataset_manifest.schema.json`.
 
-Private Cloud Run collection should use a dedicated operator deployment, not the public demo. Set
-`_DEPLOY_TARGET=cloud-run-capture` in a private Cloud Build trigger or manual build, configure the
-capture API with a private GCS bucket and Secret Manager operator-token secret, and keep the public
-services deployed with capture disabled. After collection, use `cloudbuild.phase4.yaml` to finalize a
-private capture inbox into an immutable snapshot, or train from an existing snapshot, then upload
-generated features, model artifacts, and reports back to private GCS without committing them. Do not
-train from a prefix that is receiving live captures.
+Private Cloud Run collection should be enabled only for a deliberate operator campaign on the
+existing `resonancelab-web` and `resonancelab-api` services. Keep `_DEPLOY_TARGET=cloud-run`, set
+`_PHASE4_CAPTURE_ENABLED=true` and `_PUBLIC_PHASE4_CAPTURE_ENABLED=true`, configure a private GCS
+bucket and Secret Manager operator-token secret, then redeploy with both capture flags set to
+`false` when collection ends. After collection, use `cloudbuild.phase4.yaml` to finalize a private
+capture inbox into an immutable snapshot, or train from an existing snapshot, then upload generated
+features, model artifacts, and reports back to private GCS without committing them. Do not train
+from a prefix that is receiving live captures.
 
 ## Docker Compose
 
@@ -139,6 +146,7 @@ See `FEATURES.md` for the current and planned feature list.
 - `GET /api/v1/probe-config`
 - `GET /api/v1/models`
 - `POST /api/v1/analyze`
+- `POST /api/v1/explain`
 
 `POST /api/v1/analyze` accepts multipart form data:
 
@@ -146,6 +154,11 @@ See `FEATURES.md` for the current and planned feature list.
 - `metadata`: JSON encoded probe metadata.
 
 The response includes upload/decode health, matched-filter alignment metadata, and Phase 2 DSP features. Fill estimates are computed in the browser against local Phase 3 calibration profiles; no local profile IDs or profile anchors are sent to the API.
+
+`POST /api/v1/explain` accepts analysis JSON plus optional compact browser-local calibration and
+reference-comparison summaries. It never accepts raw audio. By default it returns a deterministic
+DSP/reference summary; set `RESONANCELAB_LLM_ENABLED=true` on the API service to call Gemini through
+Vertex AI / Gemini Enterprise Agent Platform.
 
 ## Repository Layout
 
@@ -178,7 +191,7 @@ Use `[skip docs]` in a commit message only when a docs update would be noise. Th
 
 ## Cloud Build
 
-`cloudbuild.yaml` is the GCP CI/build entry point. It runs project hygiene checks, API tests, SvelteKit checks/builds, and builds the API and web container images. By default it does not push or deploy; a main-branch Cloud Build trigger can set `_DEPLOY_TARGET=cloud-run` to push images, deploy `resonancelab-api` and `resonancelab-web` to second-generation Cloud Run services with startup CPU boost, wire `PUBLIC_API_URL`, keep Phase 4 capture disabled, and update API CORS. A private operator trigger can set `_DEPLOY_TARGET=cloud-run-capture` to deploy separate `resonancelab-api-capture` and `resonancelab-web-capture` services for labeled Phase 4 recording into private GCS.
+`cloudbuild.yaml` is the GCP CI/build entry point. It runs project hygiene checks, API tests, SvelteKit checks/builds, and builds the API and web container images. By default it does not push or deploy; a main-branch Cloud Build trigger can set `_DEPLOY_TARGET=cloud-run` to push images, deploy `resonancelab-api` and `resonancelab-web` to second-generation Cloud Run services with startup CPU boost, wire `PUBLIC_API_URL`, keep Phase 4 capture and LLM calls disabled by default, and update API CORS. Later private operator collection can enable capture on those same two services through `_PHASE4_CAPTURE_ENABLED=true` and `_PUBLIC_PHASE4_CAPTURE_ENABLED=true`; the repo no longer defines separate capture Cloud Run services. Gemini explanations can be enabled on the same API service with `_LLM_ENABLED=true` after granting the runtime service account Vertex AI access.
 
 Keep project IDs, service account details, and deployment-specific substitutions in GCP trigger settings or ignored local files, not in the public repo. See `docs/gcp_cloud_run.md`.
 

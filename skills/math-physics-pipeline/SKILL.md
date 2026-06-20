@@ -3,10 +3,10 @@ name: math-physics-pipeline
 description: |
   Specializes in digital signal processing (DSP), acoustic resonance modeling, calibration algorithms, and ML validation design for the ResonanceLab pipeline.
   Use when writing digital signal processing (DSP) logic, acoustic calculations, deconvolution, matched filtering, or designing calibration/evaluation pipelines.
-license: Apache-2.0
+license: MIT
 metadata:
   version: v1
-  publisher: google
+  publisher: resonance-labs
 ---
 
 # Math & Physics Pipeline Skill
@@ -82,6 +82,8 @@ Instead, treat bleed cancellation as an experimental task exploring:
 *   **Anchor Interpolation**: Relative fill level is computed by mapping extracted peak shifts and energy values between three local anchor states: `Empty`, `50%`, and `Full`.
 *   **Algorithm**: Use piecewise linear interpolation or Euclidean distance in the multi-dimensional feature space of the calibration anchors to produce the relative fill estimation.
 *   **Phase 3 Implementation**: Browser-local calibration lives in `apps/web/src/lib/calibration/`. It extracts weighted feature vectors from Phase 2 DSP output, stores repeated anchor vectors in IndexedDB, aggregates repeats into mean feature vectors with stability statistics, and estimates fill by projecting a new vector onto the nearest calibrated polyline segment (`Empty -> 50% -> Full`). Log-Hz frequency summaries must be aggregated geometrically to match the feature space. Confidence uses a weighted geometric mean for soft quality factors and explicit caps for hard failures. It must be reduced for low SNR, weak alignment, sample-rate/capture mismatches, probe-setting mismatches, missing free-air reference, missing anchors, unstable repeats, non-monotonic peak behavior, or anchors that are too close in feature space. Calibration profile IDs and anchor vectors stay browser-local and must not be uploaded with probe analysis requests.
+*   **Phase 4 Reference Comparison**: Before supervised model training, compare current probes against free-air, calibration anchors, and known-object references with weighted feature distances, quality gates, and physical plausibility checks. Use log-frequency distances for resonance peaks, band-energy deltas for transfer-response summaries, damping/Q changes for material hypotheses, and explicit warnings when free-air or room response dominates. Present outputs as same-setup similarity hints, not benchmarked material classification claims.
+*   **LLM Explanation Boundary**: Gemini or another lab-assistant model may explain compact structured DSP/reference summaries, but raw WAV, STFT grids, and local calibration profiles must not be sent to the LLM path by default. Treat the LLM as an evidence narrator and experiment designer, never as the primary material classifier.
 
 ---
 
@@ -106,7 +108,7 @@ For each probe, extract and report:
 
 ### 4.3 Validation and Golden Tests
 *   **Data Leakage Prevention**: Split training/eval datasets strictly by recording session, device, and individual object. Do not use random sample-level splitting.
-*   **Phase 4 Baseline Discipline**: The first ML baseline is scikit-learn over extracted DSP features. Use fixed mel summaries rather than raw STFT-bin model features, keep `decay.fit_r2` as a diagnostic rather than a learned feature, honor manifest-defined fill buckets, evaluate with the compiled holdout regimes (`session_id`, `glass_id`, `device_id`, `browser_id`), and compare against global mean, global median, nearest canonical bucket, and train-mode bucket references before considering XGBoost or neural models.
+*   **Phase 4 Baseline Discipline**: The first supervised ML baseline is deferred until deterministic reference comparison has produced useful hypotheses. When training resumes, use scikit-learn over extracted DSP features, fixed mel summaries rather than raw STFT-bin model features, `decay.fit_r2` as a diagnostic rather than a learned feature, manifest-defined fill buckets, and the compiled holdout regimes (`session_id`, `glass_id`, `device_id`, `browser_id`). Compare against global mean, global median, nearest canonical bucket, and train-mode bucket references before considering XGBoost or neural models.
 *   **Golden Test Float Tolerances**: Ensure tests comparing DSP output fixtures utilize float assertions with specific tolerances (e.g., `pytest.approx(expected, rel=1e-5)`) to accommodate minor platform-specific floating-point arithmetic differences.
 *   **Current Phase 2 Baseline**: The implemented ResonanceLab DSP MVP is NumPy-first and lives in `packages/resonancelab/dsp/analysis.py`. Preserve the existing golden tests for matched-filter alignment, FFT-domain bandpass attenuation, spectrogram dimensions, dominant peak detection, post-window fallback timing, decay-fit edge cases, and the committed recorded-style WAV fixture when extending this pipeline.
 *   **Analytic Checks**: Maintain at least one closed-form damped-sinusoid regression test for peak frequency and exponential decay-rate recovery, independent of synthetic chirp fixture generation.

@@ -3,10 +3,10 @@ name: python-svelte-dev
 description: |
   Specializes in senior-level Python (FastAPI, NumPy/SciPy, Pydantic) and Svelte (SvelteKit, Web Audio API, IndexedDB) development for the ResonanceLab platform.
   Use when building SvelteKit routes, FastAPI endpoints, Web Audio/AudioWorklet capture, IndexedDB profiles, or writing frontend/backend integration code.
-license: Apache-2.0
+license: MIT
 metadata:
   version: v1
-  publisher: google
+  publisher: resonance-labs
 ---
 
 # Senior Python & Svelte Developer Skill
@@ -61,7 +61,10 @@ For project context, repository layout details, and phase gates, refer to the [i
 *   **Storage Etiquette**: Store derived DSP features by default. Request explicit user opt-in before storing raw audio blobs to prevent quota exhaustion.
 *   **Calibration Actions**: Anchor controls should use explicit command labels such as "Save Empty" or "Save Full" rather than relying on status-only anchor cards, and every save target needs a clear/reset path for accidental captures.
 *   **Free-Air Controls**: Treat a close match to the saved free-air reference as a no-glass/reference-match result, not as a nearest-glass-anchor fill estimate.
+*   **Known Reference Controls**: Store known-object references locally with concise labels and material strings. Display them as reference-similarity hints with distance margins and free-air dominance warnings, not as global material classifiers.
 *   **Dataset Capture Form State**: Browser `type="number"` fields can bind as numbers rather than strings in Svelte. Dataset capture helpers must tolerate `string | number | null | undefined` for fill percent and optional mass fields so valid zero-valued labels do not disable capture saves.
+*   **Dataset Capture Deployment Boundary**: Keep capture hidden by default. When capture is enabled later, use the existing `resonancelab-web` and `resonancelab-api` services with explicit `PUBLIC_PHASE4_CAPTURE_ENABLED` and `PHASE4_CAPTURE_ENABLED` flags rather than adding a second capture service pair.
+*   **LLM Explanation Boundary**: Explanations must call `/api/v1/explain` with compact analysis, calibration, and reference-comparison JSON only. Do not upload the WAV blob or full local profile to an LLM provider. Keep the endpoint disabled by default and use Cloud Run service identity/IAM for Vertex Gemini instead of API keys.
 *   **Acoustic Safety**: Protect users and equipment by enforcing:
     *   Volume limits (e.g., capping the amplitude multiplier to `0.35` by default).
     *   Short probe durations (e.g., maximum chirp/sweep duration of 500-1000ms).
@@ -82,7 +85,7 @@ For project context, repository layout details, and phase gates, refer to the [i
 *   **Model Caching**: Load machine learning models (e.g., XGBoost, scikit-learn) once at startup and cache them in process memory. Never reload models on a per-request basis.
 *   **DSP Optimization**: Optimize DSP functions utilizing vectorized NumPy/SciPy operations. Minimize the import footprint of heavy libraries like Librosa or PyTorch in the primary API container to control cold-start latency.
 *   **Audio Decoding**: Rely on fast binary decoding (such as `soundfile` or `scipy.io.wavfile`). Support lossy fallback formats via standard subprocess decoding only if ffmpeg is available.
-*   **Phase 4 ML Boundary**: Keep scikit-learn training and artifact export in offline package/script paths (`packages/resonancelab/ml`, `scripts/train_baseline.py`, `scripts/run_phase4_benchmark.py`). Do not load a Phase 4 model in the API until compiled benchmark reports and a model card justify serving. Treat checked-in manifests as public-safe schema examples unless they contain enough groups and feature paths to train.
+*   **Phase 4 ML Boundary**: Keep scikit-learn training and artifact export in offline package/script paths (`packages/resonancelab/ml`, `scripts/train_baseline.py`, `scripts/run_phase4_benchmark.py`). Current Phase 4 work should first compare current probes against free-air and known-object references using deterministic DSP and physics constraints; private supervised dataset capture, scikit-learn, and XGBoost training remain later gated work. Do not load a Phase 4 model in the API until compiled benchmark reports and a model card justify serving. Treat checked-in manifests as public-safe schema examples unless they contain enough groups and feature paths to train.
 
 ---
 
@@ -101,5 +104,5 @@ For project context, repository layout details, and phase gates, refer to the [i
 | **Docker Workspaces** | Copy workspace package sources into their package paths, such as `apps/web`, before running workspace scripts in container builds. | Flattening a workspace package into the container root before running `npm --workspace`. |
 | **Audio Capture** | AudioWorklet PCM -> browser-side WAV encoding. | MediaRecorder WebM/Opus by default (lossy). |
 | **ML Inference** | Ephemeral processing with scikit-learn/XGBoost baselines. | Heavy deep learning models in Phase 1 API images. |
-| **Phase 4 Training** | Use `requirements-ml.txt`, private manifests, leakage-aware group splits, and generated model cards. | Committing private raw audio or evaluating with random probe-level splits. |
+| **Phase 4 Training** | Use `requirements-ml.txt`, private manifests, leakage-aware group splits, and generated model cards after the reference-comparison milestone. | Committing private raw audio, evaluating with random probe-level splits, or deploying separate capture Cloud Run service pairs. |
 | **UI Aesthetics** | Clean lab-style layout, canvas rendering, dark visualization mode. | Raw unstyled inputs, static image placeholders, Tailwind defaults. |

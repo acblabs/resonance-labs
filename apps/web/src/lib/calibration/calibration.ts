@@ -14,11 +14,14 @@ import type {
   CalibrationProfile,
   CalibrationQuality,
   CalibrationReference,
-  CalibrationStability
+  CalibrationStability,
+  KnownObjectReference,
+  KnownReferenceComparison,
+  KnownReferenceDistance
 } from './types';
 
 const EPSILON = 1e-12;
-const PROFILE_SCHEMA_VERSION = 2;
+const PROFILE_SCHEMA_VERSION = 3;
 const MIN_COMPARABLE_FEATURES = 5;
 const LOW_ALIGNMENT_CONFIDENCE = 0.2;
 const LOW_SNR_DB = 12;
@@ -42,7 +45,8 @@ export function createCalibrationProfile(name: string): CalibrationProfile {
     createdAt: now,
     updatedAt: now,
     anchors: {},
-    freeAirReference: null
+    freeAirReference: null,
+    knownReferences: []
   };
 }
 
@@ -95,6 +99,21 @@ export function withFreeAirReference(
   };
 }
 
+export function withKnownObjectReference(
+  profile: CalibrationProfile,
+  reference: KnownObjectReference
+): CalibrationProfile {
+  const normalized = normalizeCalibrationProfile(profile);
+  return {
+    ...normalized,
+    knownReferences: [
+      reference,
+      ...normalized.knownReferences.filter((candidate) => candidate.id !== reference.id)
+    ],
+    updatedAt: new Date().toISOString()
+  };
+}
+
 export function withoutCalibrationAnchor(
   profile: CalibrationProfile,
   kind: CalibrationAnchorKind
@@ -118,6 +137,20 @@ export function withoutFreeAirReference(profile: CalibrationProfile): Calibratio
   };
 }
 
+export function withoutKnownObjectReference(
+  profile: CalibrationProfile,
+  referenceId: string
+): CalibrationProfile {
+  const normalized = normalizeCalibrationProfile(profile);
+  return {
+    ...normalized,
+    knownReferences: normalized.knownReferences.filter(
+      (reference) => reference.id !== referenceId
+    ),
+    updatedAt: new Date().toISOString()
+  };
+}
+
 export function createCalibrationAnchor(
   kind: CalibrationAnchorKind,
   analysis: CalibrationAnalysisSource
@@ -129,6 +162,21 @@ export function createFreeAirReference(
   analysis: CalibrationAnalysisSource
 ): CalibrationReference {
   return aggregateReference([createObservation(analysis)]);
+}
+
+export function createKnownObjectReference(
+  analysis: CalibrationAnalysisSource,
+  label: string,
+  material: string
+): KnownObjectReference {
+  return aggregateKnownObjectReference(
+    {
+      id: createId('known-ref'),
+      label: sanitizeReferenceLabel(label),
+      material: sanitizeReferenceMaterial(material)
+    },
+    [createObservation(analysis)]
+  );
 }
 
 export function exportCalibrationProfile(profile: CalibrationProfile): string {
@@ -175,6 +223,7 @@ export function normalizeCalibrationProfile(profile: CalibrationProfile): Calibr
   }
 
   const freeAirRaw = raw.freeAirReference as unknown;
+  const knownReferencesRaw = Array.isArray(raw.knownReferences) ? raw.knownReferences : [];
   return {
     schemaVersion: PROFILE_SCHEMA_VERSION,
     id: stringOr(raw.id, createId('profile')),
@@ -182,7 +231,110 @@ export function normalizeCalibrationProfile(profile: CalibrationProfile): Calibr
     createdAt: stringOr(raw.createdAt, new Date().toISOString()),
     updatedAt: stringOr(raw.updatedAt, new Date().toISOString()),
     anchors,
-    freeAirReference: freeAirRaw ? normalizeReference(freeAirRaw) : null
+    freeAirReference: freeAirRaw ? normalizeReference(freeAirRaw) : null,
+    knownReferences: knownReferencesRaw
+      .map(normalizeKnownObjectReference)
+      .sort((left, right) => right.savedAt.localeCompare(left.savedAt))
+  };
+}
+
+export function compareKnownReferences(
+  analysis: CalibrationAnalysisSource,
+  profile: CalibrationProfile
+): KnownReferenceComparison {
+  const normalizedProfile = normalizeCalibrationProfile(profile);
+  const query = extractCalibrationFeatureVector(analysis);
+  const references = referenceCandidates(normalizedProfile);
+  const warnings: string[] = [];
+
+  if (references.length === 0) {
+    return emptyKnownReferenceComparison(['No free-air, anchor, or known-object references saved.']);
+  }
+
+  const featureSpace = buildFeatureSpace(
+    query,
+    references.map((reference) => reference.featureVector)
+  );
+  if (featureSpace.names.length < MIN_COMPARABLE_FEATURES) {
+    warnings.push('Too few comparable reference features survived quality filtering.');
+  }
+
+  const queryPoint = projectFeatureVector(query, featureSpace);
+  const distances = references
+    .map((reference) => ({
+      role: reference.role,
+      id: reference.id,
+      label: reference.label,
+      material: reference.material,
+      state: reference.state,
+      distance: euclideanDistance(queryPoint, projectFeatureVector(reference.featureVector, featureSpace)),
+      sampleCount: reference.sampleCount
+    }))
+    .sort((left, right) => left.distance - right.distance);
+  const nearest = distances[0] ?? null;
+  const nearestObject =
+    distances.find((distance) => distance.role !== 'free_air') ?? null;
+  const freeAir = distances.find((distance) => distance.role === 'free_air') ?? null;
+  const runnerUp = distances[1] ?? null;
+  const margin = nearest && runnerUp ? runnerUp.distance - nearest.distance : null;
+  const freeAirDominates = Boolean(
+    freeAir &&
+      nearest?.role === 'free_air' &&
+      (!nearestObject || freeAir.distance < nearestObject.distance * 0.85)
+  );
+
+  if (!nearestObject) {
+    warnings.push('No saved object references are available for material comparison.');
+  }
+  if (freeAirDominates) {
+    warnings.push('Current probe is closer to free-air than saved object references.');
+  }
+
+  const compatibility = compatibilityWarnings(
+    analysis,
+    Object.values(normalizedProfile.anchors).filter(
+      (anchor): anchor is CalibrationAnchor => Boolean(anchor)
+    ),
+    normalizedProfile.freeAirReference,
+    normalizedProfile.knownReferences.flatMap((reference) => reference.observations)
+  );
+  warnings.push(...compatibility.warnings);
+  if (normalizedProfile.knownReferences.some((reference) => reference.sampleCount < 2)) {
+    warnings.push('One or more known-object references has only one repeat.');
+  }
+  if (analysis.alignment.confidence < LOW_ALIGNMENT_CONFIDENCE) {
+    warnings.push('Current chirp alignment confidence is below the reference threshold.');
+  }
+  if (analysis.dsp.signal_to_noise_db !== null && analysis.dsp.signal_to_noise_db < LOW_SNR_DB) {
+    warnings.push('Current signal-to-noise ratio is below the reference threshold.');
+  }
+  if (analysis.warnings.length > 0) {
+    warnings.push(...analysis.warnings);
+  }
+
+  const confidence = referenceComparisonConfidence({
+    analysis,
+    comparableFeatureCount: featureSpace.names.length,
+    nearestDistance: nearest?.distance ?? Number.POSITIVE_INFINITY,
+    margin,
+    hasProbeMismatch: compatibility.hasProbeMismatch,
+    hasCaptureMismatch: compatibility.hasCaptureMismatch,
+    freeAirDominates,
+    warningCount: warnings.length
+  });
+
+  return {
+    status: 'ready',
+    nearest,
+    nearestObject,
+    freeAir,
+    distances,
+    comparableFeatureCount: featureSpace.names.length,
+    margin,
+    confidence,
+    confidenceLabel: freeAirDominates ? 'none' : confidenceLabel(confidence),
+    freeAirDominates,
+    warnings: uniqueWarnings(warnings)
   };
 }
 
@@ -471,7 +623,11 @@ export function profileObservationCount(profile: CalibrationProfile): number {
     (total, definition) => total + (normalized.anchors[definition.kind]?.sampleCount ?? 0),
     0
   );
-  return anchorSamples + (normalized.freeAirReference?.sampleCount ?? 0);
+  const knownReferenceSamples = normalized.knownReferences.reduce(
+    (total, reference) => total + reference.sampleCount,
+    0
+  );
+  return anchorSamples + (normalized.freeAirReference?.sampleCount ?? 0) + knownReferenceSamples;
 }
 
 export function probeConfigSignature(config: ProbeConfig): string {
@@ -544,6 +700,33 @@ function aggregateReference(observations: CalibrationObservation[]): Calibration
   return {
     kind: 'free_air',
     label: FREE_AIR_REFERENCE_LABEL,
+    sampleCount: normalizedObservations.length,
+    observations: normalizedObservations,
+    analysisId: latest.analysisId,
+    recordedAt: latest.recordedAt,
+    savedAt: latest.savedAt,
+    probeConfig: latest.probeConfig,
+    probeConfigSignature: latest.probeConfigSignature,
+    captureSignature: latest.captureSignature,
+    capture: latest.capture,
+    featureVector: aggregateFeatureVector(normalizedObservations),
+    quality: aggregateQuality(normalizedObservations),
+    stability: stabilityForObservations(normalizedObservations),
+    warnings: uniqueWarnings(normalizedObservations.flatMap((observation) => observation.warnings))
+  };
+}
+
+function aggregateKnownObjectReference(
+  identity: { id: string; label: string; material: string },
+  observations: CalibrationObservation[]
+): KnownObjectReference {
+  const normalizedObservations = observations.map(normalizeObservation);
+  const latest = latestObservation(normalizedObservations);
+  return {
+    kind: 'known_object',
+    id: identity.id,
+    label: sanitizeReferenceLabel(identity.label),
+    material: sanitizeReferenceMaterial(identity.material),
     sampleCount: normalizedObservations.length,
     observations: normalizedObservations,
     analysisId: latest.analysisId,
@@ -666,6 +849,19 @@ function normalizeReference(rawReference: unknown): CalibrationReference {
   return aggregateReference([legacyObservation(raw)]);
 }
 
+function normalizeKnownObjectReference(rawReference: unknown): KnownObjectReference {
+  const raw = rawReference as Record<string, unknown>;
+  const identity = {
+    id: stringOr(raw.id, createId('known-ref')),
+    label: sanitizeReferenceLabel(stringOr(raw.label, 'Known reference')),
+    material: sanitizeReferenceMaterial(stringOr(raw.material, 'unknown'))
+  };
+  if (Array.isArray(raw.observations)) {
+    return aggregateKnownObjectReference(identity, raw.observations.map(normalizeObservation));
+  }
+  return aggregateKnownObjectReference(identity, [legacyObservation(raw)]);
+}
+
 function normalizeObservation(rawObservation: unknown): CalibrationObservation {
   const raw = rawObservation as Partial<CalibrationObservation> & Record<string, unknown>;
   const probeConfig = raw.probeConfig as ProbeConfig;
@@ -778,6 +974,60 @@ function requiredAnchors(profile: CalibrationProfile): [CalibrationAnchor, Calib
     profile.anchors.half as CalibrationAnchor,
     profile.anchors.full as CalibrationAnchor
   ];
+}
+
+type ReferenceCandidate = {
+  role: KnownReferenceDistance['role'];
+  id: string;
+  label: string;
+  material: string | null;
+  state: string | null;
+  sampleCount: number;
+  featureVector: CalibrationFeatureVector;
+};
+
+function referenceCandidates(profile: CalibrationProfile): ReferenceCandidate[] {
+  const candidates: ReferenceCandidate[] = [];
+  if (profile.freeAirReference) {
+    candidates.push({
+      role: 'free_air',
+      id: 'free_air',
+      label: profile.freeAirReference.label,
+      material: null,
+      state: 'free_air',
+      sampleCount: profile.freeAirReference.sampleCount,
+      featureVector: profile.freeAirReference.featureVector
+    });
+  }
+
+  for (const anchor of Object.values(profile.anchors)) {
+    if (!anchor) {
+      continue;
+    }
+    candidates.push({
+      role: 'calibration_anchor',
+      id: `anchor:${anchor.kind}`,
+      label: `${anchor.label} anchor`,
+      material: 'glass',
+      state: `${anchor.fillPercent}%`,
+      sampleCount: anchor.sampleCount,
+      featureVector: anchor.featureVector
+    });
+  }
+
+  for (const reference of profile.knownReferences) {
+    candidates.push({
+      role: 'known_object',
+      id: reference.id,
+      label: reference.label,
+      material: reference.material,
+      state: null,
+      sampleCount: reference.sampleCount,
+      featureVector: reference.featureVector
+    });
+  }
+
+  return candidates;
 }
 
 function anchorDefinition(kind: CalibrationAnchorKind): CalibrationAnchorDefinition {
@@ -961,10 +1211,74 @@ function estimateConfidence({
   return clamp(Math.min(baseConfidence, ...caps), 0, 0.99);
 }
 
+function referenceComparisonConfidence({
+  analysis,
+  comparableFeatureCount,
+  nearestDistance,
+  margin,
+  hasProbeMismatch,
+  hasCaptureMismatch,
+  freeAirDominates,
+  warningCount
+}: {
+  analysis: CalibrationAnalysisSource;
+  comparableFeatureCount: number;
+  nearestDistance: number;
+  margin: number | null;
+  hasProbeMismatch: boolean;
+  hasCaptureMismatch: boolean;
+  freeAirDominates: boolean;
+  warningCount: number;
+}): number {
+  const distanceFactor = Math.exp(-Math.pow(nearestDistance / 1.15, 2));
+  const marginRatio =
+    margin === null ? 0.35 : margin / Math.max(nearestDistance, 0.35);
+  const marginFactor = clamp(marginRatio / 0.65, 0.12, 1);
+  const featureFactor = clamp(comparableFeatureCount / 10, 0.25, 1);
+  const alignmentFactor = clamp((analysis.alignment.confidence - 0.12) / 0.68, 0.12, 1);
+  const snr = analysis.dsp.signal_to_noise_db;
+  const snrFactor = snr === null ? 0.75 : clamp((snr - 6) / 16, 0.15, 1);
+  const warningFactor = Math.pow(0.9, Math.min(warningCount, 8));
+  const baseConfidence = weightedGeometricMean(
+    [
+      { value: distanceFactor, weight: 1.8 },
+      { value: marginFactor, weight: 2.2 },
+      { value: featureFactor, weight: 0.9 },
+      { value: alignmentFactor, weight: 1.2 },
+      { value: snrFactor, weight: 1.0 },
+      { value: warningFactor, weight: 0.5 }
+    ],
+    0.5
+  );
+
+  const caps = [0.99];
+  if (hasProbeMismatch) {
+    caps.push(0.35);
+  }
+  if (hasCaptureMismatch) {
+    caps.push(0.42);
+  }
+  if (freeAirDominates) {
+    caps.push(0);
+  }
+  if (analysis.alignment.confidence < LOW_ALIGNMENT_CONFIDENCE) {
+    caps.push(0.24);
+  }
+  if (snr !== null && snr < LOW_SNR_DB) {
+    caps.push(0.45);
+  }
+  if (comparableFeatureCount < MIN_COMPARABLE_FEATURES) {
+    caps.push(0.35);
+  }
+
+  return clamp(Math.min(baseConfidence, ...caps), 0, 0.99);
+}
+
 function compatibilityWarnings(
   analysis: CalibrationAnalysisSource,
   anchors: CalibrationAnchor[],
-  freeAirReference: CalibrationReference | null
+  freeAirReference: CalibrationReference | null,
+  extraObservations: CalibrationObservation[] = []
 ): {
   warnings: string[];
   hasProbeMismatch: boolean;
@@ -973,7 +1287,8 @@ function compatibilityWarnings(
   const warnings: string[] = [];
   const observations = [
     ...anchors.flatMap((anchor) => anchor.observations),
-    ...(freeAirReference?.observations ?? [])
+    ...(freeAirReference?.observations ?? []),
+    ...extraObservations
   ];
   const queryProbeSignature = probeConfigSignature(analysis.probe.probe_config);
   const queryCapture = captureSummary(analysis);
@@ -1150,6 +1465,22 @@ function incompleteEstimate(warnings: string[]): CalibrationEstimate {
   };
 }
 
+function emptyKnownReferenceComparison(warnings: string[]): KnownReferenceComparison {
+  return {
+    status: 'empty',
+    nearest: null,
+    nearestObject: null,
+    freeAir: null,
+    distances: [],
+    comparableFeatureCount: 0,
+    margin: null,
+    confidence: 0,
+    confidenceLabel: 'none',
+    freeAirDominates: false,
+    warnings
+  };
+}
+
 function latestObservation(observations: CalibrationObservation[]): CalibrationObservation {
   if (observations.length === 0) {
     throw new Error('Calibration aggregate requires at least one observation.');
@@ -1266,6 +1597,16 @@ function clamp(value: number, min: number, max: number): number {
 function sanitizeProfileName(name: string): string {
   const trimmed = name.trim();
   return trimmed.length > 0 ? trimmed.slice(0, 80) : 'Local glass profile';
+}
+
+function sanitizeReferenceLabel(label: string): string {
+  const trimmed = label.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, 80) : 'Known reference';
+}
+
+function sanitizeReferenceMaterial(material: string): string {
+  const trimmed = material.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed.slice(0, 60) : 'unknown';
 }
 
 function createId(prefix: string): string {

@@ -1,8 +1,10 @@
 # Phase 4 Baseline Workflow
 
-Phase 4 uses scikit-learn as the first baseline stack. Training is offline and writes artifacts under
-`models/`; the production API should not load a model until a benchmark report and model card justify
-serving it.
+This supervised baseline workflow is deferred until the reference-comparison and material-hypothesis
+milestone produces repeatable separations worth labeling at scale. When training resumes, use
+scikit-learn as the first baseline stack. Training is offline and writes artifacts under `models/`;
+the production API should not load a model until a benchmark report and model card justify serving
+it.
 
 This is an absolute-label supervised baseline trained across recorded examples. It is distinct from
 the Phase 3 browser-local profile calibration, which estimates fill relative to one vessel/session

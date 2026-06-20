@@ -12,6 +12,8 @@ For early manual tests:
 - Keep the probe geometry fixed: same device orientation, same distance to the rim or wall, and same room position.
 - Capture a free-air reference when speaker-to-microphone bleed or room reflections appear to dominate the response.
 - Capture empty-glass reference recordings before comparing filled states.
+- For Phase 4 reference comparison, keep free-air and known-object references under the same device,
+  browser, volume, room position, and probe settings before asking for material hypotheses.
 - For Phase 3 calibration, capture Empty, 50%, and Full anchors without changing device position, room position, browser, volume, or vessel.
 - Capture at least two repeats per anchor when practical; single-repeat anchors intentionally reduce confidence.
 - Capture a free-air reference with the same device, browser, volume, and probe settings to characterize direct-path and room response. The current app stores this reference for confidence and comparison; it does not perform magnitude subtraction.
@@ -23,4 +25,4 @@ For early manual tests:
 
 Ground truth fill levels should be measured by mass in later feasibility testing.
 
-The API returns spectral and decay features only. Phase 3 fill-level estimates are computed in the browser from local calibration anchors and should be treated as profile-relative experimental estimates, not global predictions.
+The API returns spectral and decay features only. Phase 3 fill-level estimates are computed in the browser from local calibration anchors and should be treated as profile-relative experimental estimates, not global predictions. Any LLM explanation should consume structured DSP/reference summaries only, not raw audio.

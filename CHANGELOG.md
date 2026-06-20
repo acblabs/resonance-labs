@@ -18,10 +18,16 @@ All notable changes to ResonanceLab will be documented in this file.
 - Compiled Phase 4 benchmark report command for session, glass, device, and browser regimes.
 - Raw-audio Phase 4 feature extraction now requires exact probe metadata instead of falling back to guessed chirp settings.
 - Phase 4 training and feature-extraction scripts.
+- Browser-local known-object references and weighted DSP comparison against free-air, calibration
+  anchors, and saved material examples.
+- Structured `/api/v1/explain` endpoint with deterministic fallback summaries and optional Gemini
+  lab-assistant calls over compact DSP/reference evidence.
+- Lab UI explanation panel for observations, material hypotheses, caveats, and next-measurement
+  guidance after a probe.
 - Private Phase 4 capture endpoint with operator-token gating and GCS/local inbox storage.
 - Operator-only Phase 4 capture panel for saving labeled probe captures from the Lab UI.
-- Dedicated Cloud Run Phase 4 operator capture deploy target with separate capture services, Secret
-  Manager operator-token loading, private GCS inbox configuration, and capture-specific CORS.
+- Optional single-service Cloud Run Phase 4 capture mode with Secret Manager operator-token loading
+  and private GCS inbox configuration on the existing web/API service pair.
 - Phase 4 manifest finalization script for turning capture inbox fragments into immutable dataset snapshots.
 - Private Phase 4 Cloud Build pipeline for GCS-hosted datasets, generated features, model artifacts, and benchmark reports.
 - Phase 4 recording protocol, baseline workflow, dataset manifest JSON Schema, example manifest, model-card template, benchmark result landing zone, and evaluation notebook skeleton.
@@ -29,9 +35,11 @@ All notable changes to ResonanceLab will be documented in this file.
 - Cloud Run deployment path in Cloud Build, gated by `_DEPLOY_TARGET=cloud-run` so default and PR builds do not deploy.
 - Cloud Run API and web deploys now explicitly use the second-generation execution environment with startup CPU boost enabled.
 - Cloud Run API CORS now allows both generated Cloud Run web URL forms, and the web service uses the project-number API URL.
-- Public Cloud Run deploys now force Phase 4 capture off in runtime env, while the private capture
-  deploy target enables it only on separate operator services.
+- Cloud Run deploys now force Phase 4 capture off by default, while optional capture flags can
+  enable the existing web/API pair for a temporary operator campaign.
 - GCP Cloud Run deployment guide covering private trigger substitutions, service account hygiene, and public-safe project configuration.
+- Cloud Build substitutions for disabled-by-default Gemini explanations on the existing API Cloud
+  Run service using `gemini-3.1-pro-preview`, `global`, and `HIGH` thinking level.
 - `.gcloudignore` coverage for local GCP notes, service account key files, private datasets, and generated model artifacts.
 - Phase 3 browser-local calibration profiles backed by IndexedDB.
 - Empty, 50%, full, and free-air reference save workflow in the probe UI.
@@ -64,6 +72,13 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Changed
 
+- Phase 4 sequencing now prioritizes free-air and known-object reference comparison, deterministic
+  DSP/physics interpretation, and an LLM lab assistant before private supervised dataset capture or
+  scikit-learn/XGBoost model training.
+- Cloud Run deployment has been simplified back to one web service and one API service; private
+  capture is an optional mode on those services rather than a separate capture service pair.
+- Project SKILL.md license metadata now matches the repository MIT license and uses the
+  ResonanceLab publisher.
 - Phase 4 capture now enforces the server raw-audio storage policy, omits capture-time fill buckets,
   defers quality threshold exclusion to training, and uses web-generated idempotency keys for
   duplicate-safe retries.
@@ -91,6 +106,8 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Fixed
 
+- LLM explanation requests now exclude raw WAV bytes and full high-dimensional signal grids from the
+  hosted model path.
 - Dataset Capture numeric inputs now accept browser-coerced number values, unblocking Save Dataset
   Capture when fill percent or mass fields are entered as number inputs.
 - Calibration cards no longer describe saved anchors as having no samples when only the optional peak summary is unavailable.
@@ -111,3 +128,5 @@ All notable changes to ResonanceLab will be documented in this file.
 ### Removed
 
 - GitHub Actions workflow in favor of GCP Cloud Build.
+- `_DEPLOY_TARGET=cloud-run-capture` and capture-specific Cloud Run service substitutions from the
+  main Cloud Build deployment.

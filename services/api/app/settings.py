@@ -74,6 +74,37 @@ class Settings:
     phase4_capture_store_raw_audio: bool = field(
         default_factory=lambda: _bool_env("PHASE4_CAPTURE_STORE_RAW_AUDIO", True)
     )
+    llm_enabled: bool = field(default_factory=lambda: _bool_env("RESONANCELAB_LLM_ENABLED", False))
+    llm_provider: str = field(
+        default_factory=lambda: os.getenv("RESONANCELAB_LLM_PROVIDER", "vertex_gemini").strip()
+    )
+    llm_project_id: str | None = field(
+        default_factory=lambda: _optional_env("RESONANCELAB_LLM_PROJECT_ID")
+        or _optional_env("GOOGLE_CLOUD_PROJECT")
+    )
+    llm_location: str = field(
+        default_factory=lambda: os.getenv(
+            "RESONANCELAB_LLM_LOCATION",
+            os.getenv("GOOGLE_CLOUD_LOCATION", "global"),
+        ).strip()
+    )
+    llm_model: str = field(
+        default_factory=lambda: os.getenv(
+            "RESONANCELAB_LLM_MODEL",
+            "gemini-3.1-pro-preview",
+        ).strip()
+    )
+    llm_thinking_level: str = field(
+        default_factory=lambda: os.getenv("RESONANCELAB_LLM_THINKING_LEVEL", "HIGH")
+        .strip()
+        .upper()
+    )
+    llm_temperature: float = field(
+        default_factory=lambda: float(os.getenv("RESONANCELAB_LLM_TEMPERATURE", "0.2"))
+    )
+    llm_max_output_tokens: int = field(
+        default_factory=lambda: int(os.getenv("RESONANCELAB_LLM_MAX_OUTPUT_TOKENS", "900"))
+    )
 
 
 @lru_cache(maxsize=1)

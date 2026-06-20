@@ -12,6 +12,12 @@ Each slot can hold repeated captures. Repeats are aggregated into a mean feature
 
 Profiles can also store a free-air reference. This captures the speaker-to-microphone and room path without the vessel in the measurement position. The current app uses this reference for confidence and warnings. It does not subtract free-air magnitudes because direct path, room reflections, and object response add as complex acoustic signals.
 
+Profiles can store known-object references with operator-provided material labels. The app compares
+the current probe against free-air, calibration anchors, and saved known references in the same
+weighted DSP feature space, then reports the nearest reference, confidence, distance margin, and
+whether free-air dominates. These are similarity hints under the same setup, not benchmarked material
+classification claims.
+
 Saving an anchor or reference stores the probe settings, a canonical browser capture signature, alignment/SNR quality signals, API warnings, and a compact feature vector extracted from dominant peaks, spectral descriptors, decay estimates, and transfer-response bands. Raw audio is not stored by default, and local profile IDs are not uploaded with probe analysis requests.
 
 The estimator projects a new probe onto the nearest segment of the calibrated feature path:

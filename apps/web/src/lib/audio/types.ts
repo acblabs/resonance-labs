@@ -138,6 +138,26 @@ export type AnalysisResponse = {
   warnings: string[];
 };
 
+export type LlmExplanation = {
+  summary: string;
+  observations: string[];
+  material_hypotheses: string[];
+  caveats: string[];
+  next_measurement: string[];
+};
+
+export type LlmExplainResponse = {
+  status: "ok" | "disabled";
+  provider: "vertex_gemini";
+  model: string;
+  region: string;
+  thinking_level: string;
+  raw_audio_sent: boolean;
+  explanation: LlmExplanation;
+  evidence: Record<string, unknown>;
+  warnings: string[];
+};
+
 export type DatasetCaptureLabel = {
   fill_percent?: number;
   fill_mass_g?: number;

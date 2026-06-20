@@ -1,12 +1,13 @@
-# Phase 4 Private GCP Workflow
+# Deferred Private Dataset Workflow
 
-Phase 4 cannot be complete until real private recordings exist. The repository now has the tooling
-to keep that dataset, generated features, benchmark reports, and model artifacts in a private GCP
-bucket instead of the public repo.
+The supervised Phase 4 dataset path is no longer the immediate next milestone. The current product
+direction is to first compare probes against free-air and known-object references using deterministic
+DSP, physics constraints, and an LLM lab-assistant layer that receives structured summaries only.
 
-Do not commit the GCP project identifier, bucket name, raw audio, generated feature JSON, benchmark
-outputs, or model artifacts. Keep those values in a private Cloud Build trigger, local ignored env
-file, or private notes.
+Keep this workflow for the later supervised-training phase. It describes how to store private
+recordings, finalize immutable dataset snapshots, and run the offline scikit-learn/XGBoost baseline
+without committing raw audio, generated features, benchmark outputs, model artifacts, bucket names,
+or project identifiers to the public repo.
 
 ## Private GCS Layout
 
@@ -49,15 +50,14 @@ supported when `_RUN_EXTRACTION=true`; the private Cloud Build pipeline writes a
 
 ## Operator Capture Flow
 
-1. Enable the private capture API only on a private deployment or local operator environment. For
-   Cloud Run, prefer the dedicated `_DEPLOY_TARGET=cloud-run-capture` path in `cloudbuild.yaml`,
-   which deploys separate capture API and web services.
-2. Run probes in the Lab UI with `PUBLIC_PHASE4_CAPTURE_ENABLED=true`. The public Cloud Run demo
-   should continue to deploy with `PUBLIC_PHASE4_CAPTURE_ENABLED=false`.
-3. Save labeled captures to the private API. The API analyzes the WAV, writes analysis JSON, writes
-   the WAV only when the server allows `PHASE4_CAPTURE_STORE_RAW_AUDIO=true`, validates the
-   manifest-ready fragment, and writes one `.record.json` fragment last under
-   `phase4/inbox/<session-id>/`.
+1. Keep capture disabled while doing the math/physics reference-comparison work.
+2. When supervised data collection resumes, enable capture only for a private operator campaign.
+   Cloud Run uses the same `resonancelab-api` and `resonancelab-web` services; do not deploy a
+   separate capture service pair.
+3. Run probes in the Lab UI with `PUBLIC_PHASE4_CAPTURE_ENABLED=true`, and save labeled captures to
+   the private API. The API analyzes the WAV, writes analysis JSON, writes the WAV only when the
+   server allows `PHASE4_CAPTURE_STORE_RAW_AUDIO=true`, validates the manifest-ready fragment, and
+   writes one `.record.json` fragment last under `phase4/inbox/<session-id>/`.
 4. Run the finalization script locally or in Cloud Build. The script itself works on filesystem
    paths. For a GCS inbox, prefer the Cloud Build path below or explicitly sync the inbox to a local
    operator workspace first:
@@ -69,36 +69,39 @@ gcloud storage rsync --recursive path/to/snapshot gs://<private-bucket>/phase4/d
 ```
 
 5. Train from the finalized snapshot, not from the inbox.
+6. Redeploy the single service pair with capture disabled and remove no-longer-needed bucket/secret
+   IAM after collection.
 
-## Operator Cloud Run Capture Deployment
+## Optional Cloud Run Capture Mode
 
-Use the normal public Cloud Run deployment for demos and the dedicated capture deployment for private
-collection. A capture deploy sets:
+Use the normal Cloud Run deployment target and enable capture on the existing service names only
+when a private collection campaign is active:
 
 ```text
-_DEPLOY_TARGET=cloud-run-capture
-_CAPTURE_WEB_SERVICE=resonancelab-web-capture
-_CAPTURE_API_SERVICE=resonancelab-api-capture
-_CAPTURE_RUN_SERVICE_ACCOUNT=resonancelab-capture-run
+_DEPLOY_TARGET=cloud-run
+_WEB_SERVICE=resonancelab-web
+_API_SERVICE=resonancelab-api
+_PHASE4_CAPTURE_ENABLED=true
+_PUBLIC_PHASE4_CAPTURE_ENABLED=true
 _PHASE4_CAPTURE_GCS_BUCKET=<private-bucket>
 _PHASE4_CAPTURE_INBOX_PREFIX=phase4/inbox
 _PHASE4_CAPTURE_OPERATOR_TOKEN_SECRET=phase4-capture-operator-token
 ```
 
-The capture API receives `PHASE4_CAPTURE_ENABLED=true`, reads the operator token from Secret
-Manager, and writes to the private GCS inbox through its Cloud Run service account. The capture web
-service receives `PUBLIC_PHASE4_CAPTURE_ENABLED=true` and points at the capture API URL. The normal
-public services are deployed with capture disabled.
+The API receives `PHASE4_CAPTURE_ENABLED=true`, reads the operator token from Secret Manager, and
+writes to the private GCS inbox through the configured Cloud Run service account. The web service
+receives `PUBLIC_PHASE4_CAPTURE_ENABLED=true` and points at the same API URL.
 
-Keep these identities separate:
+For the ordinary public demo, deploy with:
 
-- `resonancelab-run`: public web/API runtime identity, no private capture bucket write access.
-- `resonancelab-capture-run`: capture API runtime identity, private bucket write access and access
-  to the operator-token secret.
+```text
+_PHASE4_CAPTURE_ENABLED=false
+_PUBLIC_PHASE4_CAPTURE_ENABLED=false
+```
 
-The capture API can remain unauthenticated at the Cloud Run ingress layer so mobile browsers can call
-it directly, but the dataset capture endpoint still requires the operator bearer token. Do not
-publish the operator URL, do not commit the bucket or token name when those values reveal private
+The capture API can remain unauthenticated at the Cloud Run ingress layer so mobile browsers can
+call it directly, but the dataset capture endpoint still requires the operator bearer token. Do not
+publish the token, do not commit bucket or secret names when those values reveal private
 infrastructure, and rotate the token after collection campaigns.
 
 ## Private Cloud Build Run
@@ -135,20 +138,23 @@ a later refinement after finalized snapshot objects are immutable.
 
 Finalization derives `label.fill_bucket` from the snapshot's `label_schema.buckets_percent`.
 Capture fragments should persist continuous `label.fill_percent` and mass-derived label fields, not
-a capture-time bucket policy. Capture also persists raw quality metrics such as alignment confidence,
-SNR, and warnings, but training and benchmark commands apply the inclusion thresholds.
+a capture-time bucket policy. Capture also persists raw quality metrics such as alignment
+confidence, SNR, and warnings, but training and benchmark commands apply the inclusion thresholds.
 
 ## Private Capture Security
 
 The capture endpoint is disabled unless `PHASE4_CAPTURE_ENABLED=true`, and it also requires an
 operator bearer token from `PHASE4_CAPTURE_OPERATOR_TOKEN`. Treat those as soft gates. The hard gate
-is IAM: only the private capture service or revision should run with a service account that can write
-to the private bucket. The public demo service should not have the bucket configured or the storage
-permission.
+is IAM: only the deployed API runtime identity should have permission to write private capture
+objects during an active campaign.
+
+Because the current topology intentionally has one API service and one web service, capture mode is
+an operator window rather than a permanent second deployment. Keep capture disabled in the ordinary
+public demo, and remove private bucket write access from the runtime identity when the campaign ends.
 
 ## Collection Minimum
 
-A useful Phase 4 benchmark needs repeated captures across:
+A useful supervised benchmark needs repeated captures across:
 
 - Multiple sessions.
 - At least one stable glass with repeated fills for session holdout.
@@ -157,5 +163,5 @@ A useful Phase 4 benchmark needs repeated captures across:
 - More than one browser or browser version for cross-browser claims.
 - Clear fill labels from water mass or another documented ground-truth method.
 
-Small single-device datasets are fine for smoke tests, but they should not be treated as Phase 4
-exit evidence.
+Small single-device datasets are fine for smoke tests, but they should not be treated as supervised
+Phase 4 exit evidence.

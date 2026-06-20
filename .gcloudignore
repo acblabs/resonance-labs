@@ -12,6 +12,7 @@ dist/
 .env.*
 !.env.example
 .run/
+.claude/
 .gcp/
 .gcloud/
 .cloudbuild/

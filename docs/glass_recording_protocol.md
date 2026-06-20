@@ -1,8 +1,11 @@
 # Phase 4 Glass Recording Protocol
 
-Phase 4 records private chirp datasets for evaluating whether DSP features can predict fill level
-under controlled conditions. The goal is not a public model yet; it is a leakage-resistant benchmark
-that tells us when a baseline is genuinely better than simple references.
+This protocol is for the later supervised dataset phase. The current Phase 4 milestone should first
+compare probes against free-air and known-object references with deterministic DSP and physics
+caveats. When supervised collection resumes, private chirp datasets evaluate whether DSP features
+can predict fill level under controlled conditions. The goal is not a public model yet; it is a
+leakage-resistant benchmark that tells us when a baseline is genuinely better than simple
+references.
 
 ## Required Metadata
 

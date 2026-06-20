@@ -73,6 +73,19 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 
 ## Current Phase 4 Features
 
+- Current Phase 4 direction prioritizes free-air and known-object reference comparison, deterministic
+  DSP feature distances, physics caveats, and LLM-assisted interpretation before supervised model
+  training.
+- Browser-local known-object reference saving with material labels.
+- Weighted reference comparison against free-air, calibration anchors, and known-object references.
+- Signal panel material hints, reference confidence, distance margin, free-air distance, and
+  comparable-feature counts for the current probe.
+- Structured `/api/v1/explain` endpoint for compact DSP, calibration, and reference-comparison
+  summaries.
+- Lab UI explanation panel with deterministic fallback summaries when the hosted LLM is disabled.
+- Optional Gemini lab-assistant path using `gemini-3.1-pro-preview`, `global`, and `HIGH` thinking
+  level through Cloud Run service identity.
+- Raw WAV files are excluded from the LLM explanation request path by schema and UI behavior.
 - Private dataset manifest format for chirp recordings with required session, glass, device, browser, room, label, probe, and quality metadata.
 - Public JSON Schema for Phase 4 dataset manifests.
 - Glass recording protocol with mass-based fill labeling, repeated captures, free-air references, and quality rejection rules.
@@ -95,8 +108,9 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 - Private dataset capture endpoint gated by operator token and explicit capture settings.
 - Operator-only web capture panel, hidden unless `PUBLIC_PHASE4_CAPTURE_ENABLED=true`, for saving labeled probe captures.
 - Dataset capture form accepts browser number-input values for fill percent and optional mass fields.
-- Dedicated Cloud Run operator capture target that deploys separate capture API/web services, loads
-  the operator token from Secret Manager, and writes labeled captures to a private GCS inbox.
+- Optional single-service Cloud Run capture mode that keeps the deployed topology to
+  `resonancelab-web` and `resonancelab-api`, loads the operator token from Secret Manager, and writes
+  labeled captures to a private GCS inbox only when explicitly enabled.
 - Private capture inbox layout for WAV, analysis JSON, and manifest-ready `.record.json` fragments.
 - Server-enforced raw-audio capture policy, capture-fragment validation, and idempotency keys for
   duplicate-safe operator retries.
@@ -107,14 +121,18 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 
 - Cloud Build defaults that run checks and image builds without deploying from PR/default triggers.
 - Main-trigger opt-in Cloud Run deployment through `_DEPLOY_TARGET=cloud-run`.
-- Private operator opt-in Cloud Run deployment through `_DEPLOY_TARGET=cloud-run-capture`.
 - Artifact Registry push steps gated behind the deploy target.
 - Cloud Run API and web service deployment with configurable memory, CPU, concurrency, timeout, min-instance, and max-instance substitutions.
 - Explicit second-generation Cloud Run execution environment and startup CPU boost for API and web deploys.
 - Runtime discovery of the deployed API URL before deploying the web service.
 - API CORS update using both generated Cloud Run web service URL forms plus optional extra origins.
-- Public Cloud Run deploys explicitly keep Phase 4 capture disabled, while capture deploys route the
-  web service to the capture API and expose the capture panel only on the operator service.
+- Public Cloud Run deploys explicitly keep Phase 4 capture disabled by default.
+- Public Cloud Run deploys explicitly keep Gemini LLM calls disabled by default while preserving the
+  deterministic `/api/v1/explain` response.
+- Cloud Build substitutions for the API service can enable Vertex Gemini explanations on the same
+  deployed API service without introducing another Cloud Run service.
+- Optional capture settings can enable the dataset panel and private capture endpoint on the same
+  web/API services for a temporary operator campaign.
 - `.gcloudignore` and `.gitignore` coverage for local GCP notes, service account key files, private datasets, and generated model artifacts.
 - Public-safe GCP deployment guide in `docs/gcp_cloud_run.md`.
 
@@ -138,15 +156,17 @@ ResonanceLab is an active acoustic sensing project for learning how everyday obj
 
 ## Planned ML Features
 
-- Initial private chirp dataset across multiple devices, browsers, sessions, rooms, and glasses.
+- Initial private chirp dataset across multiple devices, browsers, sessions, rooms, and glasses after
+  the reference-comparison workflow has produced useful material hypotheses.
 - Cross-session, cross-glass, cross-device, and cross-browser benchmark reports from private captures.
+- Scikit-learn baseline training as the first supervised model gate.
 - Optional XGBoost challenger after scikit-learn references are established.
 - Small neural audio models only after the baseline and dataset justify them.
 
 ## Planned Lab Assistant Features
 
-- Structured-result explanations.
 - Experiment design assistance.
 - Physics tutoring for chirps, FFTs, resonance, and damping.
 - Low-confidence troubleshooting guidance.
-- No raw audio sent to LLM providers.
+- Optional second-pass textual critique over the same structured evidence once the Gemini path is
+  stable.

@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { analyzeProbe, loadProbeConfig } from "$lib/audio/api";
+  import {
+    analyzeProbe,
+    explainProbeResult,
+    loadProbeConfig,
+  } from "$lib/audio/api";
   import {
     FALLBACK_PROBE_CONFIG,
     PROBE_LIMITS,
@@ -9,12 +13,14 @@
   import { captureProbe } from "$lib/audio/recorder";
   import type {
     AnalysisResponse,
+    LlmExplainResponse,
     ProbeCapture,
     ProbeConfig,
   } from "$lib/audio/types";
   import type {
     CalibrationEstimate,
     CalibrationProfile,
+    KnownReferenceComparison,
   } from "$lib/calibration/types";
   import CalibrationManager from "./CalibrationManager.svelte";
   import DatasetCapturePanel from "./DatasetCapturePanel.svelte";
@@ -36,6 +42,10 @@
   let signalView: SignalView = "waveform";
   let selectedProfile: CalibrationProfile | null = null;
   let calibrationEstimate: CalibrationEstimate | null = null;
+  let referenceComparison: KnownReferenceComparison | null = null;
+  let explanation: LlmExplainResponse | null = null;
+  let explaining = false;
+  let explainError = "";
   let selectedAnchorCount = 0;
   let selectedObservationCount = 0;
   type NumericProbeConfigKey = Exclude<keyof ProbeConfig, "signal_type">;
@@ -60,6 +70,8 @@
     running = true;
     error = "";
     result = null;
+    explanation = null;
+    explainError = "";
     lastCapture = null;
     status = "Starting";
 
@@ -87,6 +99,45 @@
     if (Number.isFinite(numericValue)) {
       config = clampProbeConfig({ ...config, [key]: numericValue });
     }
+  }
+
+  async function explainCurrentResult(): Promise<void> {
+    if (!result || explaining) {
+      return;
+    }
+    explaining = true;
+    explainError = "";
+    try {
+      explanation = await explainProbeResult(
+        result,
+        compactCalibration(calibrationEstimate),
+        referenceComparison,
+      );
+    } catch (errorValue) {
+      explainError =
+        errorValue instanceof Error ? errorValue.message : String(errorValue);
+    } finally {
+      explaining = false;
+    }
+  }
+
+  function compactCalibration(
+    estimate: CalibrationEstimate | null,
+  ): Record<string, unknown> | null {
+    if (!estimate) {
+      return null;
+    }
+    return {
+      status: estimate.status,
+      fillPercent: estimate.fillPercent,
+      confidence: estimate.confidence,
+      confidenceLabel: estimate.confidenceLabel,
+      nearestAnchor: estimate.nearestAnchor,
+      referenceMatch: estimate.referenceMatch,
+      comparableFeatureCount: estimate.comparableFeatureCount,
+      freeAirDistance: estimate.freeAirDistance,
+      warnings: estimate.warnings,
+    };
   }
 
   $: expectedSeconds =
@@ -158,6 +209,41 @@
       estimateValue?.nearestAnchor?.label ??
       "--"
     );
+  }
+
+  function formatKnownReferenceMatch(
+    comparison: KnownReferenceComparison | null,
+  ): string {
+    if (!comparison || comparison.status !== "ready") {
+      return "--";
+    }
+    if (comparison.freeAirDominates) {
+      return "Free air";
+    }
+    const nearest = comparison.nearestObject ?? comparison.nearest;
+    if (!nearest) {
+      return "--";
+    }
+    return nearest.material ? `${nearest.label} (${nearest.material})` : nearest.label;
+  }
+
+  function formatReferenceConfidence(
+    comparison: KnownReferenceComparison | null,
+  ): string {
+    if (!comparison || comparison.status !== "ready") {
+      return "--";
+    }
+    if (comparison.freeAirDominates) {
+      return "free-air dominated";
+    }
+    return `${comparison.confidenceLabel} ${(comparison.confidence * 100).toFixed(0)}%`;
+  }
+
+  function formatDistance(value: number | null | undefined): string {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return "--";
+    }
+    return value.toFixed(2);
   }
 
   function formatRepeatCount(count: number | null | undefined): string {
@@ -300,6 +386,7 @@
           {result}
           bind:selectedProfile
           bind:calibrationEstimate
+          bind:referenceComparison
           bind:selectedAnchorCount
           bind:selectedObservationCount
         />
@@ -430,6 +517,18 @@
             <span>Anchor stability</span>
             <strong>{formatStability(calibrationEstimate)}</strong>
           </div>
+          <div class="metric">
+            <span>Material hint</span>
+            <strong>{formatKnownReferenceMatch(referenceComparison)}</strong>
+          </div>
+          <div class="metric">
+            <span>Reference confidence</span>
+            <strong>{formatReferenceConfidence(referenceComparison)}</strong>
+          </div>
+          <div class="metric">
+            <span>Reference margin</span>
+            <strong>{formatDistance(referenceComparison?.margin)}</strong>
+          </div>
         </div>
 
         {#if result}
@@ -475,6 +574,18 @@
               <dd>{formatReferenceMatch(calibrationEstimate)}</dd>
             </div>
             <div class="result-row">
+              <dt>Known reference</dt>
+              <dd>{formatKnownReferenceMatch(referenceComparison)}</dd>
+            </div>
+            <div class="result-row">
+              <dt>Free-air distance</dt>
+              <dd>{formatDistance(referenceComparison?.freeAir?.distance)}</dd>
+            </div>
+            <div class="result-row">
+              <dt>Reference features</dt>
+              <dd>{referenceComparison?.comparableFeatureCount ?? 0}</dd>
+            </div>
+            <div class="result-row">
               <dt>Free-air ref</dt>
               <dd>
                 {selectedProfile?.freeAirReference
@@ -500,6 +611,66 @@
               {/each}
             </div>
           {/if}
+
+          <div class="explain-block" aria-label="Probe explanation">
+            <div class="section-heading">
+              <h2>Lab assistant</h2>
+              <span>
+                {explanation
+                  ? `${explanation.model} - ${explanation.status}`
+                  : "Ready"}
+              </span>
+            </div>
+            <div class="actions">
+              <button
+                class="secondary-button"
+                type="button"
+                disabled={explaining}
+                on:click={explainCurrentResult}
+              >
+                {explaining ? "Explaining" : "Explain"}
+              </button>
+            </div>
+            {#if explainError}
+              <div class="error" role="alert">{explainError}</div>
+            {/if}
+            {#if explanation}
+              <p class="assistant-summary">{explanation.explanation.summary}</p>
+              <div class="assistant-columns">
+                <div>
+                  <h3>Observed</h3>
+                  <ul>
+                    {#each explanation.explanation.observations as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+                <div>
+                  <h3>Hypotheses</h3>
+                  <ul>
+                    {#each explanation.explanation.material_hypotheses as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+                <div>
+                  <h3>Next</h3>
+                  <ul>
+                    {#each explanation.explanation.next_measurement as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+              </div>
+              {#if explanation.explanation.caveats.length}
+                <ul class="notice-list" aria-label="Explanation caveats">
+                  {#each explanation.explanation.caveats as caveat}
+                    <li>{caveat}</li>
+                  {/each}
+                </ul>
+              {/if}
+            {/if}
+          </div>
         {/if}
 
         {#if result?.warnings.length}

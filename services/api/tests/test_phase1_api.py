@@ -87,6 +87,7 @@ def encode_float_wav(samples: np.ndarray, sample_rate_hz: int) -> bytes:
 
 class Phase1ApiTests(unittest.TestCase):
     def setUp(self) -> None:
+        get_settings.cache_clear()
         self.client = TestClient(create_app())
 
     def test_health(self) -> None:
@@ -106,15 +107,21 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertIsNone(payload["active_model"])
-        self.assertEqual(payload["phase"], "phase_3_calibration_demo")
+        self.assertEqual(payload["phase"], "phase_4_reference_comparison")
 
-    def test_openapi_documents_analyze_response_model(self) -> None:
+    def test_openapi_documents_analysis_and_explain_response_models(self) -> None:
         response = self.client.get("/openapi.json")
         self.assertEqual(response.status_code, 200)
-        analyze_schema = response.json()["paths"]["/api/v1/analyze"]["post"]["responses"]["200"]
+        paths = response.json()["paths"]
+        analyze_schema = paths["/api/v1/analyze"]["post"]["responses"]["200"]
         self.assertEqual(
             analyze_schema["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/AnalysisResponse",
+        )
+        explain_schema = paths["/api/v1/explain"]["post"]["responses"]["200"]
+        self.assertEqual(
+            explain_schema["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/LlmExplainResponse",
         )
 
     def test_analyze_returns_audio_and_phase2_dsp_metrics(self) -> None:
@@ -156,6 +163,88 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertGreater(len(payload["dsp"]["stft"]["magnitude_db"]), 0)
         self.assertGreater(len(payload["dsp"]["mel_spectrogram"]["magnitude_db"]), 0)
         self.assertGreater(len(payload["dsp"]["transfer_response"]), 0)
+
+    def test_explain_returns_structured_summary_without_raw_audio(self) -> None:
+        analysis = self._analyze_probe_payload()
+        with patch.dict(os.environ, {"RESONANCELAB_LLM_ENABLED": "false"}):
+            get_settings.cache_clear()
+            client = TestClient(create_app())
+            response = client.post(
+                "/api/v1/explain",
+                json={
+                    "analysis": analysis,
+                    "calibration": {
+                        "status": "ready",
+                        "fillPercent": 100.0,
+                        "confidence": 0.42,
+                        "confidenceLabel": "low",
+                        "nearestAnchor": {
+                            "kind": "full",
+                            "label": "Full",
+                            "fillPercent": 100.0,
+                            "distance": 0.2,
+                        },
+                        "comparableFeatureCount": 9,
+                        "freeAirDistance": 2.1,
+                        "warnings": [],
+                    },
+                    "reference_comparison": {
+                        "status": "ready",
+                        "nearest": {
+                            "role": "known_object",
+                            "id": "known-1",
+                            "label": "glass-a full",
+                            "material": "glass",
+                            "state": "full",
+                            "distance": 0.22,
+                            "sampleCount": 2,
+                        },
+                        "nearestObject": {
+                            "role": "known_object",
+                            "id": "known-1",
+                            "label": "glass-a full",
+                            "material": "glass",
+                            "state": "full",
+                            "distance": 0.22,
+                            "sampleCount": 2,
+                        },
+                        "freeAir": {
+                            "role": "free_air",
+                            "id": "free-air",
+                            "label": "Free air",
+                            "distance": 2.1,
+                            "sampleCount": 5,
+                        },
+                        "distances": [],
+                        "comparableFeatureCount": 9,
+                        "margin": 0.7,
+                        "confidence": 0.42,
+                        "confidenceLabel": "low",
+                        "freeAirDominates": False,
+                        "warnings": [],
+                    },
+                },
+            )
+            get_settings.cache_clear()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "disabled")
+        self.assertFalse(payload["raw_audio_sent"])
+        self.assertEqual(payload["provider"], "vertex_gemini")
+        self.assertEqual(payload["model"], "gemini-3.1-pro-preview")
+        self.assertEqual(payload["region"], "global")
+        self.assertGreater(len(payload["explanation"]["observations"]), 0)
+        self.assertNotIn("series", json.dumps(payload["evidence"]))
+
+    def test_explain_rejects_raw_audio_flag(self) -> None:
+        analysis = self._analyze_probe_payload()
+        response = self.client.post(
+            "/api/v1/explain",
+            json={"analysis": analysis, "include_raw_audio": True},
+        )
+
+        self.assertEqual(response.status_code, 422)
 
     def test_decode_wav_pcm_returns_mono_samples(self) -> None:
         decoded = decode_wav_pcm(make_sine_wav(sample_rate_hz=16000, duration_seconds=0.1))
@@ -348,6 +437,15 @@ class Phase1ApiTests(unittest.TestCase):
                     "fill_bucket": "50_percent",
                 }
             )
+
+    def _analyze_probe_payload(self) -> dict:
+        response = self.client.post(
+            "/api/v1/analyze",
+            files={"audio": ("probe.wav", make_probe_wav(), "audio/wav")},
+            data={"metadata": json.dumps(_probe_metadata())},
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.json()
 
 
 def _probe_metadata() -> dict:

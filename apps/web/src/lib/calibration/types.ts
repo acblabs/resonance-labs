@@ -110,14 +110,35 @@ export type CalibrationReference = {
   warnings: string[];
 };
 
+export type KnownObjectReference = {
+  kind: 'known_object';
+  id: string;
+  label: string;
+  material: string;
+  sampleCount: number;
+  observations: CalibrationObservation[];
+  analysisId: string;
+  recordedAt: string;
+  savedAt: string;
+  probeConfig: ProbeConfig;
+  probeConfigSignature: string;
+  captureSignature: string;
+  capture: CalibrationCaptureSummary;
+  featureVector: CalibrationFeatureVector;
+  quality: CalibrationQuality;
+  stability: CalibrationStability;
+  warnings: string[];
+};
+
 export type CalibrationProfile = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   id: string;
   name: string;
   createdAt: string;
   updatedAt: string;
   anchors: Partial<Record<CalibrationAnchorKind, CalibrationAnchor>>;
   freeAirReference: CalibrationReference | null;
+  knownReferences: KnownObjectReference[];
 };
 
 export type AnchorDistance = {
@@ -131,6 +152,32 @@ export type CalibrationReferenceMatch = {
   kind: CalibrationReferenceKind;
   label: string;
   distance: number;
+};
+
+export type KnownReferenceRole = 'free_air' | 'calibration_anchor' | 'known_object';
+
+export type KnownReferenceDistance = {
+  role: KnownReferenceRole;
+  id: string;
+  label: string;
+  material: string | null;
+  state: string | null;
+  distance: number;
+  sampleCount: number;
+};
+
+export type KnownReferenceComparison = {
+  status: 'ready' | 'empty';
+  nearest: KnownReferenceDistance | null;
+  nearestObject: KnownReferenceDistance | null;
+  freeAir: KnownReferenceDistance | null;
+  distances: KnownReferenceDistance[];
+  comparableFeatureCount: number;
+  margin: number | null;
+  confidence: number;
+  confidenceLabel: 'high' | 'medium' | 'low' | 'none';
+  freeAirDominates: boolean;
+  warnings: string[];
 };
 
 export type CalibrationEstimate = {

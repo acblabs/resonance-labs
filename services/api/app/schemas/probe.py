@@ -17,7 +17,7 @@ class HealthResponse(BaseModel):
 
 class ModelsResponse(BaseModel):
     active_model: None
-    phase: Literal["phase_3_calibration_demo"]
+    phase: Literal["phase_4_reference_comparison"]
     notes: list[str]
 
 
@@ -217,6 +217,95 @@ class AnalysisResponse(BaseModel):
     probe: ProbeMetadata
     alignment: AlignmentMetadata
     dsp: DspAnalysis
+    warnings: list[str]
+
+
+class ExplainAnchorDistance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["empty", "half", "full"]
+    label: str
+    fillPercent: float
+    distance: float
+
+
+class ExplainReferenceMatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["free_air"]
+    label: str
+    distance: float
+
+
+class ExplainCalibrationEstimate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ready", "incomplete"]
+    fillPercent: float | None = None
+    confidence: float = Field(ge=0, le=1)
+    confidenceLabel: Literal["high", "medium", "low", "none"]
+    nearestAnchor: ExplainAnchorDistance | None = None
+    referenceMatch: ExplainReferenceMatch | None = None
+    comparableFeatureCount: int = Field(ge=0)
+    freeAirDistance: float | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ExplainReferenceDistance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["free_air", "calibration_anchor", "known_object"]
+    id: str
+    label: str
+    material: str | None = None
+    state: str | None = None
+    distance: float
+    sampleCount: int = Field(ge=0)
+
+
+class ExplainReferenceComparison(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ready", "empty"]
+    nearest: ExplainReferenceDistance | None = None
+    nearestObject: ExplainReferenceDistance | None = None
+    freeAir: ExplainReferenceDistance | None = None
+    distances: list[ExplainReferenceDistance] = Field(default_factory=list, max_length=24)
+    comparableFeatureCount: int = Field(ge=0)
+    margin: float | None = None
+    confidence: float = Field(ge=0, le=1)
+    confidenceLabel: Literal["high", "medium", "low", "none"]
+    freeAirDominates: bool
+    warnings: list[str] = Field(default_factory=list)
+
+
+class LlmExplainRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    analysis: AnalysisResponse
+    calibration: ExplainCalibrationEstimate | None = None
+    reference_comparison: ExplainReferenceComparison | None = None
+    operator_question: str | None = Field(default=None, max_length=500)
+    include_raw_audio: Literal[False] = False
+
+
+class LlmExplanation(BaseModel):
+    summary: str
+    observations: list[str]
+    material_hypotheses: list[str]
+    caveats: list[str]
+    next_measurement: list[str]
+
+
+class LlmExplainResponse(BaseModel):
+    status: Literal["ok", "disabled"]
+    provider: Literal["vertex_gemini"]
+    model: str
+    region: str
+    thinking_level: str
+    raw_audio_sent: bool
+    explanation: LlmExplanation
+    evidence: dict[str, Any]
     warnings: list[str]
 
 

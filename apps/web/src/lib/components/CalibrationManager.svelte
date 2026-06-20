@@ -5,9 +5,11 @@
     CALIBRATION_ANCHORS,
     FREE_AIR_REFERENCE_LABEL,
     anchorCount,
+    compareKnownReferences,
     createCalibrationAnchor,
     createCalibrationProfile,
     createFreeAirReference,
+    createKnownObjectReference,
     estimateFillLevel,
     exportCalibrationProfile,
     importCalibrationProfile,
@@ -16,8 +18,10 @@
     renameCalibrationProfile,
     withCalibrationAnchor,
     withFreeAirReference,
+    withKnownObjectReference,
     withoutCalibrationAnchor,
-    withoutFreeAirReference
+    withoutFreeAirReference,
+    withoutKnownObjectReference
   } from '$lib/calibration/calibration';
   import {
     deleteCalibrationProfile,
@@ -32,12 +36,15 @@
     CalibrationAnchorKind,
     CalibrationEstimate,
     CalibrationProfile,
-    CalibrationReference
+    CalibrationReference,
+    KnownObjectReference,
+    KnownReferenceComparison
   } from '$lib/calibration/types';
 
   export let result: AnalysisResponse | null = null;
   export let selectedProfile: CalibrationProfile | null = null;
   export let calibrationEstimate: CalibrationEstimate | null = null;
+  export let referenceComparison: KnownReferenceComparison | null = null;
   export let selectedAnchorCount = 0;
   export let selectedObservationCount = 0;
 
@@ -54,6 +61,9 @@
   let displayProfile: CalibrationProfile | null = null;
   let displayAnchors: Partial<Record<CalibrationAnchorKind, CalibrationAnchor>> = {};
   let displayFreeAirReference: CalibrationReference | null = null;
+  let displayKnownReferences: KnownObjectReference[] = [];
+  let knownReferenceLabelDraft = 'Known object';
+  let knownReferenceMaterialDraft = 'glass';
 
   onMount(loadProfiles);
 
@@ -218,6 +228,31 @@
     }
   }
 
+  async function saveCurrentAsKnownReference(): Promise<void> {
+    if (!displayProfile || !result) {
+      return;
+    }
+    savingCalibration = true;
+    calibrationError = '';
+    try {
+      const reference = createKnownObjectReference(
+        result,
+        knownReferenceLabelDraft,
+        knownReferenceMaterialDraft
+      );
+      const profile = withKnownObjectReference(displayProfile, reference);
+      await saveCalibrationProfile(profile);
+      replaceProfile(profile);
+      await refreshStorageEstimate();
+      calibrationStatus = `${reference.label} reference saved`;
+    } catch (referenceError) {
+      calibrationError =
+        referenceError instanceof Error ? referenceError.message : String(referenceError);
+    } finally {
+      savingCalibration = false;
+    }
+  }
+
   async function clearAnchor(kind: CalibrationAnchorKind): Promise<void> {
     if (!displayProfile || !displayAnchors[kind]) {
       return;
@@ -260,6 +295,31 @@
       replaceProfile(profile);
       await refreshStorageEstimate();
       calibrationStatus = `${FREE_AIR_REFERENCE_LABEL} reference cleared`;
+    } catch (referenceError) {
+      calibrationError =
+        referenceError instanceof Error ? referenceError.message : String(referenceError);
+    } finally {
+      savingCalibration = false;
+    }
+  }
+
+  async function clearKnownReference(reference: KnownObjectReference): Promise<void> {
+    if (!displayProfile) {
+      return;
+    }
+    const confirmed = window.confirm(`Clear "${reference.label}" known reference?`);
+    if (!confirmed) {
+      return;
+    }
+
+    savingCalibration = true;
+    calibrationError = '';
+    try {
+      const profile = withoutKnownObjectReference(displayProfile, reference.id);
+      await saveCalibrationProfile(profile);
+      replaceProfile(profile);
+      await refreshStorageEstimate();
+      calibrationStatus = `${reference.label} reference cleared`;
     } catch (referenceError) {
       calibrationError =
         referenceError instanceof Error ? referenceError.message : String(referenceError);
@@ -325,7 +385,7 @@
   }
 
   function formatObservationStatus(
-    observation: CalibrationAnchor | CalibrationReference | null
+    observation: CalibrationAnchor | CalibrationReference | KnownObjectReference | null
   ): string {
     if (!observation) {
       return 'Not saved';
@@ -371,6 +431,7 @@
   $: displayProfile = selectedProfile ? normalizeCalibrationProfile(selectedProfile) : null;
   $: displayAnchors = displayProfile?.anchors ?? {};
   $: displayFreeAirReference = displayProfile?.freeAirReference ?? null;
+  $: displayKnownReferences = displayProfile?.knownReferences ?? [];
   $: selectedAnchorCount = displayProfile ? anchorCount(displayProfile) : 0;
   $: selectedObservationCount = displayProfile ? profileObservationCount(displayProfile) : 0;
   $: {
@@ -378,6 +439,8 @@
     if (cacheKey !== calibrationEstimateCacheKey) {
       calibrationEstimateCacheKey = cacheKey;
       calibrationEstimate = result && displayProfile ? estimateFillLevel(result, displayProfile) : null;
+      referenceComparison =
+        result && displayProfile ? compareKnownReferences(result, displayProfile) : null;
     }
   }
 </script>
@@ -512,6 +575,67 @@
         Clear
       </button>
     </div>
+  </div>
+
+  <div class="known-reference-panel">
+    <div class="section-heading">
+      <h2>Known references</h2>
+      <span>{displayKnownReferences.length} saved</span>
+    </div>
+    <div class="known-reference-form">
+      <div class="field">
+        <label for="known-reference-label">Reference label</label>
+        <input
+          id="known-reference-label"
+          type="text"
+          value={knownReferenceLabelDraft}
+          disabled={loadingProfiles || savingCalibration}
+          on:input={(event) => (knownReferenceLabelDraft = event.currentTarget.value)}
+        />
+      </div>
+      <div class="field">
+        <label for="known-reference-material">Material</label>
+        <input
+          id="known-reference-material"
+          type="text"
+          value={knownReferenceMaterialDraft}
+          disabled={loadingProfiles || savingCalibration}
+          on:input={(event) => (knownReferenceMaterialDraft = event.currentTarget.value)}
+        />
+      </div>
+      <button
+        class="secondary-button"
+        type="button"
+        disabled={!selectedProfile || !result || savingCalibration}
+        on:click={saveCurrentAsKnownReference}
+      >
+        Save Known
+      </button>
+    </div>
+
+    {#if displayKnownReferences.length}
+      <div class="known-reference-list" aria-label="Known object references">
+        {#each displayKnownReferences as reference}
+          <div class="known-reference-row">
+            <div>
+              <strong>{reference.label}</strong>
+              <span>
+                {reference.material} - {formatObservationStatus(reference)} -
+                {formatRepeatCount(reference.sampleCount)}
+              </span>
+            </div>
+            <button
+              class="anchor-clear-button"
+              type="button"
+              disabled={savingCalibration}
+              on:click={() => clearKnownReference(reference)}
+            >
+              Clear
+            </button>
+          </div>
+        {/each}
+      </div>
+    {/if}
   </div>
 
   <span class="status-line">{calibrationStatus}</span>

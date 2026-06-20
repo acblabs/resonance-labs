@@ -14,6 +14,8 @@ from app.schemas import (
     DatasetCaptureRequest,
     DatasetCaptureResponse,
     HealthResponse,
+    LlmExplainRequest,
+    LlmExplainResponse,
     ModelsResponse,
     ProbeConfig,
     ProbeConfigEnvelope,
@@ -22,7 +24,9 @@ from app.schemas import (
 from app.services import (
     AnalyzeUploadError,
     DatasetCaptureStoreError,
+    LlmExplanationError,
     analyze_probe_upload,
+    explain_probe_result,
     store_dataset_capture,
 )
 from app.settings import Settings, get_settings
@@ -76,11 +80,13 @@ async def probe_config() -> ProbeConfigEnvelope:
 async def models() -> ModelsResponse:
     return ModelsResponse(
         active_model=None,
-        phase="phase_3_calibration_demo",
+        phase="phase_4_reference_comparison",
         notes=[
             "No ML model is loaded.",
             "The analyze endpoint returns chirp-aligned DSP features and confidence signals.",
             "Profile-relative fill estimates run in the browser against local IndexedDB anchors.",
+            "The explain endpoint consumes compact structured DSP/reference summaries and never "
+            "raw WAV.",
         ],
     )
 
@@ -106,6 +112,18 @@ async def analyze(
         )
     except AnalyzeUploadError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/api/v1/explain", response_model=LlmExplainResponse)
+async def explain(request: LlmExplainRequest) -> LlmExplainResponse:
+    settings = get_settings()
+    try:
+        return explain_probe_result(request, settings)
+    except LlmExplanationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post("/api/v1/dataset/captures", response_model=DatasetCaptureResponse)

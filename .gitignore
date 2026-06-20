@@ -12,6 +12,7 @@ dist/
 .env.*
 !.env.example
 .run/
+.claude/
 
 # Local cloud/deployment state and credentials.
 .gcp/

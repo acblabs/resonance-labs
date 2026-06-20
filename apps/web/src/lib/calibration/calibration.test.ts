@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { AnalysisResponse, ProbeConfig } from '$lib/audio/types';
 import {
   captureSignature,
+  compareKnownReferences,
   createCalibrationAnchor,
   createFreeAirReference,
+  createKnownObjectReference,
   createCalibrationProfile,
   estimateFillLevel,
   exportCalibrationProfile,
@@ -11,8 +13,10 @@ import {
   importCalibrationProfile,
   withFreeAirReference,
   withCalibrationAnchor,
+  withKnownObjectReference,
   withoutCalibrationAnchor,
-  withoutFreeAirReference
+  withoutFreeAirReference,
+  withoutKnownObjectReference
 } from './calibration';
 
 const PROBE_CONFIG: ProbeConfig = {
@@ -185,6 +189,60 @@ describe('calibration estimator', () => {
     expect(estimate.warnings.join(' ')).toContain('free-air reference');
   });
 
+  it('compares probes against saved known-object references', () => {
+    let profile = completeProfile(1600, 1400, 1200);
+    profile = withFreeAirReference(
+      profile,
+      createFreeAirReference(makeAnalysis('free-air', 900))
+    );
+    profile = withKnownObjectReference(
+      profile,
+      createKnownObjectReference(makeAnalysis('ceramic-ref', 2300), 'Ceramic mug', 'Ceramic')
+    );
+
+    const comparison = compareKnownReferences(makeAnalysis('ceramic-query', 2300), profile);
+
+    expect(comparison.status).toBe('ready');
+    expect(comparison.nearestObject?.label).toBe('Ceramic mug');
+    expect(comparison.nearestObject?.material).toBe('ceramic');
+    expect(comparison.freeAirDominates).toBe(false);
+    expect(comparison.comparableFeatureCount).toBeGreaterThan(8);
+    expect(comparison.confidence).toBeGreaterThan(0.4);
+  });
+
+  it('marks reference comparison as free-air dominated when the room path wins', () => {
+    let profile = completeProfile(1600, 1400, 1200);
+    profile = withFreeAirReference(
+      profile,
+      createFreeAirReference(makeAnalysis('free-air', 900))
+    );
+    profile = withKnownObjectReference(
+      profile,
+      createKnownObjectReference(makeAnalysis('known-glass', 1600), 'Known glass', 'glass')
+    );
+
+    const comparison = compareKnownReferences(makeAnalysis('absent-object', 900), profile);
+
+    expect(comparison.status).toBe('ready');
+    expect(comparison.nearest?.role).toBe('free_air');
+    expect(comparison.freeAirDominates).toBe(true);
+    expect(comparison.confidenceLabel).toBe('none');
+    expect(comparison.warnings.join(' ')).toContain('free-air');
+  });
+
+  it('clears known-object references without deleting calibration anchors', () => {
+    let profile = withKnownObjectReference(
+      completeProfile(1600, 1400, 1200),
+      createKnownObjectReference(makeAnalysis('known-glass', 1600), 'Known glass', 'glass')
+    );
+    const referenceId = profile.knownReferences[0].id;
+
+    profile = withoutKnownObjectReference(profile, referenceId);
+
+    expect(profile.knownReferences).toHaveLength(0);
+    expect(profile.anchors.empty?.sampleCount).toBe(1);
+  });
+
   it('clears one anchor without deleting the rest of the profile', () => {
     const profile = withoutCalibrationAnchor(completeProfile(1600, 1400, 1200), 'half');
 
@@ -208,9 +266,13 @@ describe('calibration estimator', () => {
   });
 
   it('exports and imports normalized local profile JSON', () => {
-    const profile = withFreeAirReference(
+    let profile = withFreeAirReference(
       completeProfile(1600, 1400, 1200),
       createFreeAirReference(makeAnalysis('free-air', 900))
+    );
+    profile = withKnownObjectReference(
+      profile,
+      createKnownObjectReference(makeAnalysis('known-glass', 1600), 'Known glass', 'glass')
     );
 
     const imported = importCalibrationProfile(exportCalibrationProfile(profile));
@@ -219,6 +281,8 @@ describe('calibration estimator', () => {
     expect(imported.name).toContain('import');
     expect(imported.anchors.empty?.sampleCount).toBe(1);
     expect(imported.freeAirReference?.sampleCount).toBe(1);
+    expect(imported.knownReferences).toHaveLength(1);
+    expect(imported.knownReferences[0].label).toBe('Known glass');
   });
 });
 
