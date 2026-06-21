@@ -32,14 +32,16 @@ For project context and repository layout details, refer to the root README, FEA
 *   **Logarithmic Chirp Formula**:
     $$x(t) = A \sin \left( 2\pi f_0 \frac{k^t - 1}{\ln k} \right)$$
     where $k = (f_1 / f_0)^{1/T}$, $f_0$ is start frequency, $f_1$ is end frequency, and $T$ is duration.
-*   **Matched Filtering**: Use cross-correlation with the emitted sweep for time alignment and impulse-like response views.
-*   **Deconvolution**: Use regularized complex frequency-domain division when estimating transfer or impulse-envelope proxies. Keep the regularization value visible in code/tests and avoid division by tiny reference bins. Impulse-envelope traces should use linear zero-padded deconvolution, local envelope extraction before compaction, and framing as comparison features rather than spatial reconstructions.
+*   **Matched Filtering**: Use cross-correlation with the emitted sweep for time alignment and impulse-like response views. Treat the matched-filter trace as the cleaner direct-path timing estimator.
+*   **Deconvolution**: Use regularized complex frequency-domain division when estimating transfer or response-envelope proxies. Keep the regularization value visible in code/tests and avoid division by tiny reference bins. Deconvolved-response traces should use linear zero-padded deconvolution, local envelope extraction before compaction, and framing as comparison features rather than spatial reconstructions.
+*   **Response Caveats**: Report matched-filter and deconvolved traces separately. Use matched timing for ambiguous direct-path caveats, deconvolved balance for regularized response-shape caveats, and keep high-Q warnings prioritized over lower-severity informational notes.
 
 ### 2.2 Spectral Estimation & Sub-Bin Peak Detection
 
 *   **Native Sample Rate**: Preserve the capture sample rate unless downsampling is explicitly validated.
 *   **Windowing**: Apply Hann-style windows before spectral estimates when leakage matters.
 *   **FFT-domain Filtering**: Zero-pad before frequency masking and crop back to the original interval.
+*   **MFCC Summary**: MFCCs are log-mel/DCT spectral-envelope summaries. C0 is the scaled log-energy/DC cepstral term under the orthonormal DCT basis, not a speech-identity feature.
 *   **Peak Interpolation**: Estimate peak frequencies with quadratic interpolation on log-magnitude or dB spectra:
     $$\delta = \frac{1}{2} \frac{\alpha - \gamma}{\alpha - 2\beta + \gamma}$$
     where $\beta$ is the peak-bin dB value and $\alpha, \gamma$ are adjacent-bin dB values.
@@ -65,11 +67,13 @@ For each probe, extract and report:
 *   Spectral centroid, bandwidth, rolloff, and floor.
 *   Transfer-response magnitude across configured bands.
 *   STFT and mel-spectrogram grids.
+*   MFCC summary statistics from log-mel/DCT coefficients.
 *   Dominant peak frequencies, prominence, and Q-factor.
+*   Low-frequency mode groups with warning labels for weak, broad, narrow, clustered, or unresolved peaks.
 *   RMS-envelope decay rate, RT60 proxy, and fit quality.
-*   Low, mid, and high band-limited decay estimates for controlled repeat comparisons, with filter-ringing caveats.
-*   Compact regularized impulse-envelope proxy for report visualization.
-*   Caveats for low SNR, weak alignment, forced browser processing, or unstable decay.
+*   Low, mid, and high band-limited decay estimates with filter-ringing caveats.
+*   Compact matched-filter and regularized deconvolved response traces for report visualization.
+*   Caveats for low SNR, weak alignment, forced browser processing, unstable decay, direct/late response balance, unresolved modes, or very high Q.
 
 ---
 

@@ -428,38 +428,64 @@ function drawImpulseResponsePanel(
     "#151c1a",
     "#32423d",
   );
-  drawPanelTitle(context, "Impulse envelope", panel.x, panel.y);
+  drawPanelTitle(context, "Impulse / deconvolved response", panel.x, panel.y);
 
-  const trace = report.analysis.dsp.impulse_response;
+  drawResponseTraceSlot(
+    context,
+    report.analysis.dsp.matched_response,
+    "Matched impulse",
+    panel.x + 24,
+    panel.y + 58,
+    panel.width - 48,
+    42,
+    "#f0b35a",
+  );
+  drawResponseTraceSlot(
+    context,
+    report.analysis.dsp.impulse_response,
+    "Deconvolved",
+    panel.x + 24,
+    panel.y + 112,
+    panel.width - 48,
+    42,
+    "#58b9d1",
+  );
+}
+
+function drawResponseTraceSlot(
+  context: CanvasRenderingContext2D,
+  trace: AnalysisResponse["dsp"]["impulse_response"],
+  label: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  stroke: string,
+): void {
   if (!trace?.times_seconds?.length || !trace.magnitude_db.length) {
-    drawEmpty(
-      context,
-      "No impulse envelope available.",
-      panel.x + 24,
-      panel.y + 74,
-    );
+    drawEmpty(context, `No ${label.toLowerCase()} trace.`, x, y + 24);
     return;
   }
-
   drawLineTrace(
     context,
     trace.times_seconds,
     trace.magnitude_db,
-    panel.x + 24,
-    panel.y + 64,
-    panel.width - 48,
-    panel.height - 104,
-    { minY: -96, maxY: 0, stroke: "#58b9d1" },
+    x + 104,
+    y,
+    width - 104,
+    height,
+    { minY: -96, maxY: 0, stroke },
   );
   context.fillStyle = "#9fb0aa";
   context.font = "600 12px Inter, Segoe UI, sans-serif";
-  context.fillText("0 dB", panel.x + 24, panel.y + 58);
-  context.fillText("-96 dB", panel.x + 24, panel.y + panel.height - 22);
+  context.fillText(label, x, y + 16);
+  context.fillText("0 dB", x + 104, y - 6);
+  context.fillText("-96 dB", x + 104, y + height + 15);
   context.textAlign = "right";
   context.fillText(
     `${Math.round((trace.times_seconds.at(-1) ?? 0) * 1000)} ms`,
-    panel.x + panel.width - 24,
-    panel.y + panel.height - 22,
+    x + width,
+    y + height + 15,
   );
   context.textAlign = "left";
 }
@@ -1086,8 +1112,10 @@ function decayFitCheck(
 function buildMethodNotes(): string[] {
   return [
     "Transfer-response bands are regularized driven-path summaries computed from the aligned chirp plus available ring-down; values are not calibrated room transfer functions.",
-    "The impulse envelope is a compact, zero-padded regularized deconvolution envelope normalized for comparison, not a spatial room reconstruction.",
-    "Low, mid, and high decay bands reuse the post-chirp window and should be compared only across controlled repeat captures.",
+    "The matched-filter impulse envelope and regularized deconvolved response are compact envelope views normalized for comparison, not spatial room reconstructions.",
+    "MFCC summaries are log-mel/DCT spectral-envelope statistics for the analysis window, not speech-recognition identity features.",
+    "Low-frequency mode groups are peak-evidence clusters with warning labels for weak, narrow, broad, or unresolved peaks.",
+    "Low, mid, and high decay bands reuse the post-chirp window and are filter-ringing-sensitive RT60 proxies.",
     "STFT and mel grids are compact UI/export visualizations, not high-resolution analysis arrays.",
     "Q factor is a half-power bandwidth proxy and can be inflated by narrow tonal, browser, or device artifacts.",
   ];
@@ -1096,7 +1124,16 @@ function buildMethodNotes(): string[] {
 function buildAnalysisCaveats(analysis: AnalysisResponse): string[] {
   const topPeak = analysis.dsp.dominant_peaks[0] ?? null;
   const note = topPeak ? highQNote(topPeak.q_factor) : null;
-  return note ? [note] : [];
+  const caveats = (analysis.dsp.response_caveats ?? []).map(
+    (caveat) => caveat.message,
+  );
+  const serverHasHighQ = (analysis.dsp.response_caveats ?? []).some(
+    (caveat) => caveat.id === "very_high_q_peak",
+  );
+  if (note && !serverHasHighQ) {
+    caveats.push(note);
+  }
+  return [...new Set(caveats)];
 }
 
 function highQNote(qFactor: number | null): string | null {

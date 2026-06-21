@@ -1,6 +1,6 @@
 # Device Validation
 
-Use this protocol before trusting room-fingerprint comparisons from a new browser or device class.
+Use this protocol before trusting room-fingerprint captures from a new browser or device class.
 
 ## Capture Matrix
 
@@ -24,6 +24,7 @@ The Lab UI now computes a run-quality summary from the returned analysis:
 - Capture path: AudioWorklet preferred; ScriptProcessor is acceptable for fallback validation.
 - Browser processing: reported echo cancellation, noise suppression, or auto gain control should stay off.
 - Decay fit: RT60 with fit `>= 0.55` is preferred, but weak decay fit is a diagnostic rather than a hard identity claim.
+- Response caveats: review direct/late balance, unstable decay, high-Q peaks, and low-mode warning labels before trusting descriptors.
 
 The headline score is an evidence-quality score, not a count of mandatory checks. Required checks carry double the weight of advisory checks; `pass` counts as `1`, `review` as `0.5`, and `fail` as `0`. The status remains the stronger signal: any required failure makes the run `fail`, while advisory failures make it `review`.
 
@@ -34,12 +35,11 @@ Q-factor values above `300` are shown as `Q >300` and should be treated as very 
 Record these fields for every validation session:
 
 - device label, browser, operating system, and origin URL
-- room label and position label
+- room/setup label
 - playback volume setting
 - device orientation and surface
 - probe configuration
 - three repeated runs without moving the device
 - exported JSON reports for reviewed runs
-- side-by-side JSON report comparison for repeat runs before adding public fixtures
 
 Do not publish private room names, addresses, raw audio, or unreviewed report exports.

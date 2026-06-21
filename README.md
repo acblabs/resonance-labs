@@ -1,10 +1,10 @@
 # ResonanceLab
 
-ResonanceLab is an open-source, sound-only active acoustic sensing platform for room acoustic fingerprints. The app plays a short logarithmic chirp, records the speaker/microphone response, extracts deterministic DSP features, and renders waveform, FFT, STFT, mel-spectrogram, decay, transfer-response, and room-mode descriptors.
+ResonanceLab is an open-source, sound-only active acoustic sensing platform for room acoustic fingerprints. The app plays a short logarithmic chirp, records the speaker/microphone response, extracts deterministic DSP features, and renders waveform, FFT, STFT, mel-spectrogram, matched impulse response, deconvolved response, decay, transfer-response, MFCC, caveat, and room-mode descriptors.
 
 The current product direction is **Room Acoustic Fingerprint** plus **Acoustic Image Export**. It does not make object-state claims or claim to reconstruct room geometry from a single speaker and microphone.
 
-## Phase 1 Status
+## Status
 
 Implemented:
 
@@ -16,14 +16,14 @@ Implemented:
 - FastAPI `/health`, `/api/v1/probe-config`, `/api/v1/models`, `/api/v1/analyze`, and `/api/v1/explain`.
 - Upload validation for size, content type, WAV structure, sample rate, duration, RMS, peak amplitude, and DC offset.
 - Matched-filter chirp alignment with detected/expected chirp timing.
-- FFT-domain bandpass filtering, spectral descriptors, dominant peak detection, Q-factor proxy, STFT, mel-spectrogram, transfer-response bands, RMS-envelope decay, and RT60 proxy.
-- Regularized impulse-envelope proxy and low/mid/high decay-band summaries for report comparison.
-- Browser views for waveform, FFT, STFT, and mel-spectrogram.
+- FFT-domain bandpass filtering, spectral descriptors, MFCC summary statistics, dominant peak detection, Q-factor proxy, low-mode grouping, STFT, mel-spectrogram, transfer-response bands, RMS-envelope decay, and RT60 proxy.
+- Matched-filter impulse-response and regularized deconvolved-response traces, with low/mid/high decay-band summaries for diagnostics.
+- Browser views for waveform, FFT, STFT, mel-spectrogram, matched impulse response, and deconvolved response.
 - Room descriptors for dry/live character, brightness, dominant mode, SNR, alignment, centroid, rolloff, and warnings.
+- Direct-path and room-response caveats for low SNR, weak alignment, unstable decay, direct/late response balance, high-Q peaks, and low-mode uncertainty.
 - Run-quality validation for alignment, SNR, duration, sample rate, peak amplitude, capture path, browser processing, and decay fit, with required checks weighted above advisory checks.
-- Exportable JSON and PNG acoustic reports from the Lab UI, plus browser-local side-by-side comparison of exported JSON reports.
+- Exportable JSON and PNG acoustic reports from the Lab UI.
 - Deterministic `/api/v1/explain` fallback plus optional Gemini lab-assistant integration over compact structured DSP evidence only.
-- Public-safe real-room fixture manifest validation for reviewed report exports, including privacy-key checks and non-failing repeat coverage.
 - Docker Compose for the web/API pair.
 - Cloud Build checks, image builds, and opt-in Cloud Run deployment.
 - Local Git hook checks for README, CHANGELOG, FEATURES, and project SKILL.md freshness.
@@ -32,8 +32,7 @@ Still manual:
 
 - Real-device Android Chrome and iOS Safari validation.
 - HTTPS mobile testing outside localhost.
-- Real-room fixture collection across devices, browsers, positions, and rooms.
-- Visual review of exported report comparisons from real device captures.
+- Real-device review of response caveats and decay-band visuals.
 
 ## Quickstart
 
@@ -58,9 +57,9 @@ In another shell, start the web app:
 npm.cmd --workspace @resonancelab/web run dev
 ```
 
-Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. Do not use headphones or earbuds for active probing. The signal panel can switch between waveform, FFT, STFT, and mel-spectrogram views after the API returns.
+Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. Do not use headphones or earbuds for active probing. The signal panel can switch between waveform, FFT, STFT, mel-spectrogram, matched impulse-response, and deconvolved-response views after the API returns.
 
-After a successful probe, export JSON or PNG reports from the Lab UI. JSON reports are the preferred public-safe artifact for device validation and real-room fixture manifests because they contain derived DSP evidence without raw WAV bytes.
+After a successful probe, export JSON or PNG reports from the Lab UI. JSON reports are the preferred public-safe artifact for validation records because they contain derived DSP evidence without raw WAV bytes.
 
 ## Docker Compose
 
@@ -87,7 +86,7 @@ See `FEATURES.md` for the current and planned feature list.
 - `audio`: PCM WAV file.
 - `metadata`: JSON encoded probe metadata.
 
-The response includes upload/decode health, matched-filter alignment metadata, compact spectral grids, transfer-response bands, dominant peaks, decay features, and warnings.
+The response includes upload/decode health, matched-filter alignment metadata, compact spectral grids, MFCC summaries, transfer-response bands, response traces, low-mode groups, dominant peaks, decay features, caveats, and warnings.
 
 `POST /api/v1/explain` accepts analysis JSON and `include_raw_audio=false`. It never accepts raw audio. By default it returns a deterministic DSP explanation; set `RESONANCELAB_LLM_ENABLED=true` on the API service to call Gemini through Vertex AI / Gemini Enterprise Agent Platform. The request body is capped by `RESONANCELAB_MAX_EXPLAIN_BODY_BYTES` and defaults to 512 KiB; Gemini output is capped by `RESONANCELAB_LLM_MAX_OUTPUT_TOKENS`, which defaults to 8192 so high-thinking calls have room to return compact JSON.
 

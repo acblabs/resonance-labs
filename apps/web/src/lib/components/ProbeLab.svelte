@@ -30,11 +30,13 @@
     DeviceValidationSummary,
     ValidationStatus,
   } from "$lib/report/acousticReport";
+  import DecayBandsCanvas from "./DecayBandsCanvas.svelte";
+  import ResponseTraceCanvas from "./ResponseTraceCanvas.svelte";
   import SpectrogramCanvas from "./SpectrogramCanvas.svelte";
   import SpectrumCanvas from "./SpectrumCanvas.svelte";
   import WaveformCanvas from "./WaveformCanvas.svelte";
 
-  type SignalView = "waveform" | "fft" | "stft" | "mel";
+  type SignalView = "waveform" | "fft" | "stft" | "mel" | "impulse" | "deconv";
   type NumericProbeConfigKey = Exclude<keyof ProbeConfig, "signal_type">;
   const VERY_HIGH_Q_THRESHOLD = 300;
 
@@ -181,6 +183,10 @@
     signalView === "mel"
       ? (result?.dsp.mel_spectrogram ?? null)
       : (result?.dsp.stft ?? null);
+  $: activeResponseTrace =
+    signalView === "impulse"
+      ? (result?.dsp.matched_response ?? null)
+      : (result?.dsp.impulse_response ?? null);
   $: validation = result ? buildDeviceValidation(result) : null;
   $: dominantPeakNote = topPeak ? highQNote(topPeak.q_factor) : "";
   $: reportComparison =
@@ -210,6 +216,45 @@
       return "--";
     }
     return `${value.toFixed(3)} s`;
+  }
+
+  function formatMilliseconds(value: number | null | undefined): string {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return "--";
+    }
+    return `${(value * 1000).toFixed(1)} ms`;
+  }
+
+  function formatSignedDb(value: number | null | undefined): string {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return "--";
+    }
+    const sign = value > 0 ? "+" : "";
+    return `${sign}${value.toFixed(1)} dB`;
+  }
+
+  function formatCoefficient(value: number | null | undefined): string {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return "--";
+    }
+    return value.toFixed(2);
+  }
+
+  function formatLabels(labels: string[]): string {
+    if (!labels.length) {
+      return "stable";
+    }
+    return labels.map((label) => label.replaceAll("_", " ")).join(", ");
+  }
+
+  function caveatTone(severity: string): string {
+    if (severity === "warning") {
+      return "Warning";
+    }
+    if (severity === "review") {
+      return "Review";
+    }
+    return "Info";
   }
 
   function formatRoomCharacter(analysis: AnalysisResponse | null): string {
@@ -453,6 +498,24 @@
           >
             Mel
           </button>
+          <button
+            type="button"
+            role="tab"
+            class:active-tab={signalView === "impulse"}
+            aria-selected={signalView === "impulse"}
+            on:click={() => (signalView = "impulse")}
+          >
+            Impulse
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class:active-tab={signalView === "deconv"}
+            aria-selected={signalView === "deconv"}
+            on:click={() => (signalView = "deconv")}
+          >
+            Deconv
+          </button>
         </div>
 
         <div class="plot-shell">
@@ -462,6 +525,18 @@
             <SpectrumCanvas
               series={result?.dsp.fft.series ?? null}
               peaks={result?.dsp.dominant_peaks ?? []}
+            />
+          {:else if signalView === "impulse"}
+            <ResponseTraceCanvas
+              trace={activeResponseTrace}
+              label="Matched-filter impulse response"
+              stroke="#f0b35a"
+            />
+          {:else if signalView === "deconv"}
+            <ResponseTraceCanvas
+              trace={activeResponseTrace}
+              label="Regularized deconvolved response"
+              stroke="#58b9d1"
             />
           {:else}
             <SpectrogramCanvas grid={activeSpectrogram} />
@@ -480,6 +555,22 @@
           <div class="metric">
             <span>Dominant mode</span>
             <strong>{formatMode(result)}</strong>
+          </div>
+          <div class="metric">
+            <span>Matched peak</span>
+            <strong>
+              {result
+                ? formatMilliseconds(result.dsp.matched_response.peak_time_seconds)
+                : "--"}
+            </strong>
+          </div>
+          <div class="metric">
+            <span>Deconv D/L</span>
+            <strong>
+              {result
+                ? formatSignedDb(result.dsp.impulse_response.direct_to_late_db)
+                : "--"}
+            </strong>
           </div>
           <div class="metric">
             <span>RT60 proxy</span>
@@ -524,6 +615,10 @@
           <div class="metric">
             <span>Run quality</span>
             <strong>{formatValidation(validation)}</strong>
+          </div>
+          <div class="metric">
+            <span>Mode groups</span>
+            <strong>{result?.dsp.mode_groups.length ?? "--"}</strong>
           </div>
         </div>
 
@@ -681,6 +776,22 @@
                   : result.dsp.decay.fit_r2.toFixed(3)}
               </dd>
             </div>
+            <div class="result-row">
+              <dt>Matched peak</dt>
+              <dd>{formatMilliseconds(result.dsp.matched_response.peak_time_seconds)}</dd>
+            </div>
+            <div class="result-row">
+              <dt>Matched direct / late</dt>
+              <dd>{formatSignedDb(result.dsp.matched_response.direct_to_late_db)}</dd>
+            </div>
+            <div class="result-row">
+              <dt>Deconv peak</dt>
+              <dd>{formatMilliseconds(result.dsp.impulse_response.peak_time_seconds)}</dd>
+            </div>
+            <div class="result-row">
+              <dt>Deconv direct / late</dt>
+              <dd>{formatSignedDb(result.dsp.impulse_response.direct_to_late_db)}</dd>
+            </div>
           </dl>
 
           {#if result.dsp.transfer_response.length}
@@ -694,16 +805,81 @@
             </div>
           {/if}
 
+          {#if result.dsp.mfcc.coefficients.length}
+            <div class="section-heading">
+              <h2>MFCC summary</h2>
+              <span>{result.dsp.mfcc.method}</span>
+            </div>
+            <div class="transfer-list" aria-label="MFCC summary statistics">
+              {#each result.dsp.mfcc.coefficients.slice(0, 6) as coefficient}
+                <div class="transfer-row">
+                  <span>C{coefficient.index} mean / std</span>
+                  <strong>
+                    {formatCoefficient(coefficient.mean)} / {formatCoefficient(
+                      coefficient.std,
+                    )}
+                  </strong>
+                </div>
+              {/each}
+            </div>
+          {/if}
+
+          {#if result.dsp.mode_groups.length}
+            <div class="section-heading">
+              <h2>Low modes</h2>
+              <span>Grouped peaks</span>
+            </div>
+            <div class="transfer-list" aria-label="Low-frequency mode groups">
+              {#each result.dsp.mode_groups as group}
+                <div class="transfer-row">
+                  <span>
+                    {formatHz(group.start_hz)}-{formatHz(group.end_hz)}
+                    {formatLabels(group.warning_labels)}
+                  </span>
+                  <strong>
+                    {formatHz(group.center_hz)}
+                    {group.q_factor === null ? "" : `, ${formatQ(group.q_factor)}`}
+                  </strong>
+                </div>
+              {/each}
+            </div>
+          {/if}
+
           {#if result.dsp.decay_bands.length}
             <div class="section-heading">
               <h2>Decay bands</h2>
               <span>RT60 proxies</span>
             </div>
+            <div class="mini-plot-shell">
+              <DecayBandsCanvas bands={result.dsp.decay_bands} />
+            </div>
             <div class="transfer-list" aria-label="Decay bands">
               {#each result.dsp.decay_bands as band}
                 <div class="transfer-row">
                   <span>{band.label} {formatHz(band.start_hz)}-{formatHz(band.end_hz)}</span>
-                  <strong>{formatSeconds(band.rt60_seconds)}</strong>
+                  <strong>
+                    {formatSeconds(band.rt60_seconds)}
+                    {band.fit_r2 === null ? "" : ` / ${band.fit_r2.toFixed(2)}`}
+                  </strong>
+                </div>
+              {/each}
+            </div>
+          {/if}
+
+          {#if result.dsp.response_caveats.length}
+            <div class="section-heading">
+              <h2>Response caveats</h2>
+              <span>{result.dsp.response_caveats.length}</span>
+            </div>
+            <div class="caveat-grid" aria-label="Response caveats">
+              {#each result.dsp.response_caveats as caveat}
+                <div
+                  class="caveat-row"
+                  class:caveat-warning={caveat.severity === "warning"}
+                  class:caveat-review={caveat.severity === "review"}
+                >
+                  <strong>{caveatTone(caveat.severity)}</strong>
+                  <span>{caveat.message}</span>
                 </div>
               {/each}
             </div>

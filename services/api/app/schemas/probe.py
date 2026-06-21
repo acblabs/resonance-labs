@@ -145,10 +145,12 @@ class TransferBandFeature(BaseModel):
 class ResponseTrace(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
 
-    method: Literal["regularized_deconvolution"]
+    method: Literal["regularized_deconvolution", "matched_filter_envelope"]
     times_seconds: list[float] = Field(max_length=IMPULSE_RESPONSE_MAX_POINTS)
     magnitude_db: list[float] = Field(max_length=IMPULSE_RESPONSE_MAX_POINTS)
     regularization: float
+    peak_time_seconds: float | None = None
+    direct_to_late_db: float | None = None
 
     @model_validator(mode="after")
     def validate_lengths(self) -> ResponseTrace:
@@ -190,6 +192,41 @@ class DecayBandFeature(BaseModel):
     fit_r2: float | None
 
 
+class MfccCoefficientFeature(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    index: int = Field(ge=0, le=32)
+    mean: float
+    std: float
+    minimum: float
+    maximum: float
+
+
+class MfccSummaryFeature(BaseModel):
+    method: Literal["log_mel_dct_ii"]
+    coefficients: list[MfccCoefficientFeature] = Field(max_length=20)
+
+
+class ModeGroupFeature(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    start_hz: float
+    end_hz: float
+    center_hz: float
+    peak_count: int = Field(ge=1, le=12)
+    frequencies_hz: list[float] = Field(max_length=12)
+    dominant_frequency_hz: float
+    max_prominence_db: float
+    q_factor: float | None
+    warning_labels: list[str] = Field(max_length=6)
+
+
+class ResponseCaveatFeature(BaseModel):
+    id: str = Field(max_length=64)
+    severity: Literal["info", "review", "warning"]
+    message: str = Field(max_length=240)
+
+
 class DspAnalysis(BaseModel):
     bandpass_low_hz: float
     bandpass_high_hz: float
@@ -199,9 +236,13 @@ class DspAnalysis(BaseModel):
     mel_spectrogram: SpectrogramGrid
     transfer_response: list[TransferBandFeature] = Field(max_length=16)
     impulse_response: ResponseTrace
+    matched_response: ResponseTrace
+    mfcc: MfccSummaryFeature
     dominant_peaks: list[PeakFeature] = Field(max_length=12)
+    mode_groups: list[ModeGroupFeature] = Field(max_length=8)
     decay: DecayFeature
     decay_bands: list[DecayBandFeature] = Field(max_length=len(DEFAULT_DECAY_BANDS_HZ))
+    response_caveats: list[ResponseCaveatFeature] = Field(max_length=8)
 
 
 class AnalysisResponse(BaseModel):

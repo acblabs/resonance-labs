@@ -2,8 +2,8 @@
 
 The current fixture set has two roles:
 
-- `phase2_golden_probe.json` drives a deterministic generated signal for stable math regression tests.
-- `phase2_recorded_style_probe.wav` is a committed PCM WAV with synthetic channel coloration, attenuation, direct-path bleed, echoes, hum/noise, soft clipping, and ring-down.
+- The deterministic golden probe fixture drives a generated signal for stable math regression tests.
+- The recorded-style probe fixture is a committed PCM WAV with synthetic channel coloration, attenuation, direct-path bleed, echoes, hum/noise, soft clipping, and ring-down.
 
 Neither fixture is a real device/session recording. They protect DSP code paths, but they do not validate real-world room fingerprint stability.
 

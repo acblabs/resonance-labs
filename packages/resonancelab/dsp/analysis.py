@@ -22,6 +22,12 @@ MIN_DECAY_DYNAMIC_RANGE_DB = 6.0
 TRANSFER_RESPONSE_REGULARIZATION = 1e-4
 IMPULSE_RESPONSE_MAX_SECONDS = 0.18
 IMPULSE_RESPONSE_MAX_POINTS = 192
+LOW_FREQUENCY_MODE_MAX_HZ = 500.0
+LOW_MODE_GROUP_WIDTH_HZ = 120.0
+VERY_HIGH_Q_THRESHOLD = 300.0
+DIRECT_PATH_DOMINANCE_DB = 12.0
+LATE_RESPONSE_DOMINANCE_DB = -6.0
+AMBIGUOUS_DIRECT_PATH_SECONDS = 0.025
 DEFAULT_TRANSFER_BANDS_HZ = (
     (100.0, 250.0),
     (250.0, 500.0),
@@ -118,12 +124,14 @@ class TransferBand:
 
 @dataclass(frozen=True)
 class ResponseTrace:
-    """Compact regularized impulse-envelope proxy for report visualization."""
+    """Compact response envelope proxy for report visualization."""
 
-    method: Literal["regularized_deconvolution"]
+    method: Literal["regularized_deconvolution", "matched_filter_envelope"]
     times_seconds: list[float]
     magnitude_db: list[float]
     regularization: float
+    peak_time_seconds: float | None = None
+    direct_to_late_db: float | None = None
 
 
 @dataclass(frozen=True)
@@ -151,6 +159,49 @@ class DecayBandEstimate:
 
 
 @dataclass(frozen=True)
+class MfccCoefficientSummary:
+    """Time-summary statistics for one cepstral coefficient."""
+
+    index: int
+    mean: float
+    std: float
+    minimum: float
+    maximum: float
+
+
+@dataclass(frozen=True)
+class MfccSummary:
+    """Compact MFCC summary from log-mel energy and an orthonormal DCT-II."""
+
+    method: Literal["log_mel_dct_ii"]
+    coefficients: list[MfccCoefficientSummary]
+
+
+@dataclass(frozen=True)
+class ModeGroup:
+    """Grouped low-frequency modal evidence with review labels."""
+
+    start_hz: float
+    end_hz: float
+    center_hz: float
+    peak_count: int
+    frequencies_hz: list[float]
+    dominant_frequency_hz: float
+    max_prominence_db: float
+    q_factor: float | None
+    warning_labels: list[str]
+
+
+@dataclass(frozen=True)
+class ResponseCaveat:
+    """Measured-response caveat derived from DSP evidence."""
+
+    id: str
+    severity: Literal["info", "review", "warning"]
+    message: str
+
+
+@dataclass(frozen=True)
 class ChirpDspAnalysis:
     """Full Phase 2 DSP analysis bundle."""
 
@@ -163,9 +214,13 @@ class ChirpDspAnalysis:
     mel_spectrogram: SpectrogramGrid
     transfer_response: list[TransferBand]
     impulse_response: ResponseTrace
+    matched_response: ResponseTrace
+    mfcc: MfccSummary
     dominant_peaks: list[PeakFeature]
+    mode_groups: list[ModeGroup]
     decay: DecayEstimate
     decay_bands: list[DecayBandEstimate]
+    response_caveats: list[ResponseCaveat]
 
 
 def generate_log_chirp(spec: ChirpSpec, sample_rate_hz: int) -> npt.NDArray[np.float64]:
@@ -335,12 +390,18 @@ def analyze_chirp_response(
         reference,
         sample_rate_hz,
     )
+    matched_response = compute_matched_response(
+        response_window,
+        reference,
+        sample_rate_hz,
+    )
     peaks = find_dominant_peaks(
         spectrum_window,
         sample_rate_hz,
         min_hz=max(80.0, chirp.start_hz * 0.5),
         max_hz=min(nyquist_hz, max(chirp.end_hz * 1.25, chirp.start_hz + 100.0)),
     )
+    mode_groups = group_low_frequency_modes(peaks)
     stft = compute_stft_grid(
         filtered,
         sample_rate_hz,
@@ -351,6 +412,12 @@ def analyze_chirp_response(
         sample_rate_hz,
         min_hz=max(20.0, chirp.start_hz * 0.4),
         max_hz=min(nyquist_hz, max(chirp.end_hz * 1.25, 2000.0)),
+    )
+    mfcc = compute_mfcc_summary(
+        spectrum_window,
+        sample_rate_hz,
+        min_hz=max(20.0, chirp.start_hz * 0.4),
+        max_hz=min(nyquist_hz, max(chirp.end_hz * 1.25, 8000.0)),
     )
     decay = estimate_decay(
         post_window,
@@ -363,6 +430,15 @@ def analyze_chirp_response(
         window_start_seconds=post_start / sample_rate_hz,
         max_hz=min(nyquist_hz * 0.98, max(chirp.end_hz, 8000.0)),
     )
+    response_caveats = build_response_caveats(
+        alignment=alignment,
+        signal_to_noise_db=signal_to_noise_db,
+        matched_response=matched_response,
+        impulse_response=impulse_response,
+        decay=decay,
+        peaks=peaks,
+        mode_groups=mode_groups,
+    )
 
     return ChirpDspAnalysis(
         bandpass_low_hz=bandpass_low_hz,
@@ -374,9 +450,13 @@ def analyze_chirp_response(
         mel_spectrogram=mel,
         transfer_response=transfer_response,
         impulse_response=impulse_response,
+        matched_response=matched_response,
+        mfcc=mfcc,
         dominant_peaks=peaks,
+        mode_groups=mode_groups,
         decay=decay,
         decay_bands=decay_bands,
+        response_caveats=response_caveats,
     )
 
 
@@ -594,6 +674,61 @@ def compute_mel_spectrogram(
     )
 
 
+def compute_mfcc_summary(
+    samples: npt.ArrayLike,
+    sample_rate_hz: int,
+    *,
+    min_hz: float,
+    max_hz: float,
+    coefficient_count: int = 13,
+    mel_bins: int = 32,
+    window_size: int = 1024,
+    hop_size: int = 256,
+) -> MfccSummary:
+    """Compute compact MFCC summary statistics from log-mel frame energies.
+
+    The coefficients use an orthonormal DCT-II over natural-log mel energies.
+    C0 is the scaled log-energy/DC cepstral term under that orthonormal basis.
+    These values summarize the spectral envelope of the analysis window; they
+    are not speaker-independent speech-recognition features in this project.
+    """
+
+    times, frequencies, power = _stft_power(
+        samples,
+        sample_rate_hz,
+        window_size=window_size,
+        hop_size=hop_size,
+    )
+    if power.size == 0 or times.size == 0:
+        return MfccSummary(method="log_mel_dct_ii", coefficients=[])
+
+    filters, _ = _mel_filterbank(
+        sample_rate_hz=sample_rate_hz,
+        frequencies=frequencies,
+        min_hz=min_hz,
+        max_hz=max_hz,
+        mel_bins=mel_bins,
+    )
+    mel_power = filters @ power
+    if mel_power.size == 0:
+        return MfccSummary(method="log_mel_dct_ii", coefficients=[])
+
+    log_mel = np.log(np.maximum(mel_power, EPSILON))
+    coefficient_count = max(1, min(int(coefficient_count), log_mel.shape[0]))
+    cepstra = _dct_type_ii_ortho(log_mel, coefficient_count)
+    coefficients = [
+        MfccCoefficientSummary(
+            index=index,
+            mean=float(np.mean(values)),
+            std=float(np.std(values)),
+            minimum=float(np.min(values)),
+            maximum=float(np.max(values)),
+        )
+        for index, values in enumerate(cepstra)
+    ]
+    return MfccSummary(method="log_mel_dct_ii", coefficients=coefficients)
+
+
 def compute_transfer_response(
     captured_response: npt.ArrayLike,
     reference_chirp: npt.ArrayLike,
@@ -726,12 +861,95 @@ def compute_impulse_response(
     peak_db = float(np.max(compact_magnitude_db)) if compact_magnitude_db.size else 0.0
     normalized_db = np.maximum(compact_magnitude_db - peak_db, -96.0)
     times = np.arange(trace_samples, dtype=np.float64) / sample_rate_hz
+    peak_time_seconds, direct_to_late_db = _response_trace_shape(times, envelope)
 
     return ResponseTrace(
         method="regularized_deconvolution",
         times_seconds=_float_list(times[indices]),
         magnitude_db=_float_list(normalized_db),
         regularization=regularization_value,
+        peak_time_seconds=peak_time_seconds,
+        direct_to_late_db=direct_to_late_db,
+    )
+
+
+def compute_matched_response(
+    captured_response: npt.ArrayLike,
+    reference_chirp: npt.ArrayLike,
+    sample_rate_hz: int,
+    *,
+    max_seconds: float = IMPULSE_RESPONSE_MAX_SECONDS,
+    max_points: int = IMPULSE_RESPONSE_MAX_POINTS,
+) -> ResponseTrace:
+    """Compute a compact matched-filter response envelope.
+
+    This trace is an impulse-like view from chirp correlation. It complements the
+    regularized deconvolution trace and keeps the direct-path peak visually explicit.
+    """
+
+    captured = _as_mono_float64(captured_response)
+    reference = _as_mono_float64(reference_chirp)
+    if (
+        captured.size == 0
+        or reference.size == 0
+        or captured.size < reference.size
+        or sample_rate_hz <= 0
+    ):
+        return ResponseTrace(
+            method="matched_filter_envelope",
+            times_seconds=[],
+            magnitude_db=[],
+            regularization=0.0,
+        )
+
+    captured_centered = captured - float(np.mean(captured))
+    reference_centered = reference - float(np.mean(reference))
+    reference_norm = float(np.linalg.norm(reference_centered))
+    if reference_norm <= EPSILON or float(np.linalg.norm(captured_centered)) <= EPSILON:
+        return ResponseTrace(
+            method="matched_filter_envelope",
+            times_seconds=[],
+            magnitude_db=[],
+            regularization=0.0,
+        )
+
+    correlation = _valid_cross_correlation(captured_centered, reference_centered)
+    window_energy = _rolling_energy(captured_centered, reference_centered.size)
+    normalized = np.abs(
+        correlation / (reference_norm * np.sqrt(np.maximum(window_energy, EPSILON)))
+    )
+    trace_samples = min(
+        normalized.size,
+        max(1, int(round(max(0.001, max_seconds) * sample_rate_hz))),
+    )
+    if trace_samples <= 0:
+        return ResponseTrace(
+            method="matched_filter_envelope",
+            times_seconds=[],
+            magnitude_db=[],
+            regularization=0.0,
+        )
+
+    envelope_frame = max(4, int(round(0.00075 * sample_rate_hz)))
+    envelope_frame = min(envelope_frame, trace_samples)
+    kernel = np.ones(envelope_frame, dtype=np.float64) / envelope_frame
+    envelope_power = np.convolve(np.square(normalized[:trace_samples]), kernel, mode="same")
+    envelope = np.sqrt(np.maximum(envelope_power, EPSILON))
+    max_points = max(1, int(max_points))
+    indices = _compact_indices(trace_samples, max_points)
+    compact_magnitude_db = 20.0 * np.log10(envelope[indices] + EPSILON)
+    peak_db = float(np.max(compact_magnitude_db)) if compact_magnitude_db.size else 0.0
+    normalized_db = np.maximum(compact_magnitude_db - peak_db, -96.0)
+    times = np.arange(trace_samples, dtype=np.float64) / sample_rate_hz
+    peak_time_seconds, direct_to_late_db = _response_trace_shape(times, envelope)
+
+    return ResponseTrace(
+        method="matched_filter_envelope",
+        times_seconds=_float_list(times[indices]),
+        magnitude_db=_float_list(normalized_db),
+        regularization=0.0,
+        peak_time_seconds=peak_time_seconds,
+        direct_to_late_db=direct_to_late_db,
     )
 
 
@@ -747,9 +965,10 @@ def estimate_decay_bands(
 ) -> list[DecayBandEstimate]:
     """Estimate low/mid/high decay from band-limited post-chirp windows.
 
-    FFT-domain zero-phase bandpass filtering can introduce symmetric ringing around
-    sharp onsets, so these band RT60 values are comparison diagnostics rather than
-    calibrated reverberation measurements.
+    Each band intentionally receives its own zero-phase FFT mask from the same
+    post-window source. The masks are non-overlapping, but filtering can introduce
+    symmetric ringing around sharp onsets, so these band RT60 values are
+    diagnostics rather than calibrated reverberation measurements.
     """
 
     array = _as_mono_float64(samples)
@@ -844,6 +1063,291 @@ def find_dominant_peaks(
         )
 
     return sorted(peaks, key=lambda peak: peak.magnitude_db, reverse=True)
+
+
+def group_low_frequency_modes(
+    peaks: list[PeakFeature],
+    *,
+    max_hz: float = LOW_FREQUENCY_MODE_MAX_HZ,
+    group_width_hz: float = LOW_MODE_GROUP_WIDTH_HZ,
+) -> list[ModeGroup]:
+    """Group low-frequency peak evidence into modal bands with review labels."""
+
+    low_peaks = sorted(
+        (peak for peak in peaks if peak.frequency_hz <= max_hz),
+        key=lambda peak: peak.frequency_hz,
+    )
+    if not low_peaks:
+        return []
+
+    grouped: list[list[PeakFeature]] = []
+    for peak in low_peaks:
+        if not grouped:
+            grouped.append([peak])
+            continue
+        previous = grouped[-1]
+        previous_frequencies = [item.frequency_hz for item in previous]
+        dominant = max(previous, key=lambda item: item.prominence_db)
+        candidate_span = max(max(previous_frequencies), peak.frequency_hz) - min(
+            min(previous_frequencies),
+            peak.frequency_hz,
+        )
+        if (
+            candidate_span <= group_width_hz
+            and abs(peak.frequency_hz - dominant.frequency_hz) <= group_width_hz
+        ):
+            previous.append(peak)
+        else:
+            grouped.append([peak])
+
+    mode_groups: list[ModeGroup] = []
+    for group in grouped:
+        dominant = max(group, key=lambda peak: peak.prominence_db)
+        frequencies = [peak.frequency_hz for peak in group]
+        warning_labels = _mode_group_warning_labels(
+            group,
+            dominant,
+            group_width_hz=group_width_hz,
+        )
+        start = max(20.0, min(frequencies) - group_width_hz / 2.0)
+        end = min(max_hz, max(frequencies) + group_width_hz / 2.0)
+        mode_groups.append(
+            ModeGroup(
+                start_hz=float(start),
+                end_hz=float(end),
+                center_hz=float(np.mean(frequencies)),
+                peak_count=len(group),
+                frequencies_hz=_float_list(frequencies),
+                dominant_frequency_hz=dominant.frequency_hz,
+                max_prominence_db=max(peak.prominence_db for peak in group),
+                q_factor=dominant.q_factor,
+                warning_labels=warning_labels,
+            )
+        )
+
+    return sorted(mode_groups, key=lambda group: group.max_prominence_db, reverse=True)
+
+
+def build_response_caveats(
+    *,
+    alignment: AlignmentResult,
+    signal_to_noise_db: float | None,
+    matched_response: ResponseTrace,
+    impulse_response: ResponseTrace,
+    decay: DecayEstimate,
+    peaks: list[PeakFeature],
+    mode_groups: list[ModeGroup],
+) -> list[ResponseCaveat]:
+    """Build compact caveats that separate measured response from interpretation."""
+
+    caveats: list[ResponseCaveat] = []
+    if alignment.confidence < ALIGNMENT_WARN_CONFIDENCE:
+        caveats.append(
+            ResponseCaveat(
+                id="weak_alignment",
+                severity="warning",
+                message=(
+                    "Chirp alignment is weak; direct-path timing and room-response "
+                    "summaries may be unstable."
+                ),
+            )
+        )
+    if signal_to_noise_db is None:
+        caveats.append(
+            ResponseCaveat(
+                id="missing_snr",
+                severity="review",
+                message=(
+                    "SNR was not estimated because the pre-roll noise window was not usable."
+                ),
+            )
+        )
+    elif signal_to_noise_db < SNR_WARN_DB:
+        caveats.append(
+            ResponseCaveat(
+                id="low_snr",
+                severity="warning",
+                message=(
+                    f"SNR is below {SNR_WARN_DB:.0f} dB; weak peaks and decay tails "
+                    "should be treated as noise-sensitive."
+                ),
+            )
+        )
+
+    if matched_response.peak_time_seconds is None and impulse_response.peak_time_seconds is None:
+        caveats.append(
+            ResponseCaveat(
+                id="missing_response_traces",
+                severity="review",
+                message="No usable matched or deconvolved response trace was available.",
+            )
+        )
+    else:
+        # Matched filtering is the cleaner direct-path timing estimator; the
+        # regularized deconvolution trace is used for response-shape balance.
+        if (
+            matched_response.peak_time_seconds is not None
+            and matched_response.peak_time_seconds > AMBIGUOUS_DIRECT_PATH_SECONDS
+        ):
+            caveats.append(
+                ResponseCaveat(
+                    id="ambiguous_matched_direct_path",
+                    severity="review",
+                    message=(
+                        "The strongest matched-filter response peak arrives later than "
+                        f"{AMBIGUOUS_DIRECT_PATH_SECONDS * 1000:.0f} ms; direct-path "
+                        "timing may be affected by alignment, device latency, or reflections."
+                    ),
+                )
+            )
+        if matched_response.peak_time_seconds is None:
+            caveats.append(
+                ResponseCaveat(
+                    id="missing_matched_response",
+                    severity="review",
+                    message="No usable matched-filter response trace was available.",
+                )
+            )
+        if impulse_response.peak_time_seconds is None:
+            caveats.append(
+                ResponseCaveat(
+                    id="missing_deconvolved_response",
+                    severity="review",
+                    message="No usable regularized deconvolved response trace was available.",
+                )
+            )
+        caveats.extend(_response_balance_caveats("matched", matched_response))
+        caveats.extend(_response_balance_caveats("deconvolved", impulse_response))
+
+    if decay.rt60_seconds is None or decay.fit_r2 is None:
+        caveats.append(
+            ResponseCaveat(
+                id="unstable_decay",
+                severity="review",
+                message="Decay fit did not produce a stable RT60 proxy for this capture.",
+            )
+        )
+    elif decay.fit_r2 < 0.35:
+        caveats.append(
+            ResponseCaveat(
+                id="weak_decay_fit",
+                severity="review",
+                message="Decay fit quality is weak; compare decay values cautiously.",
+            )
+        )
+
+    if peaks and not mode_groups:
+        caveats.append(
+            ResponseCaveat(
+                id="no_low_frequency_mode_group",
+                severity="info",
+                message=(
+                    f"No dominant peaks below {LOW_FREQUENCY_MODE_MAX_HZ:.0f} Hz "
+                    "cleared the grouping threshold."
+                ),
+            )
+        )
+
+    for group_index, group in enumerate(mode_groups[:3]):
+        if group.warning_labels:
+            caveats.append(
+                ResponseCaveat(
+                    id=(
+                        f"low_mode_{group_index}_{round(group.center_hz)}hz_"
+                        + "_".join(group.warning_labels[:2])
+                    ),
+                    severity="review",
+                    message=(
+                        f"Low-frequency mode group near {group.center_hz:.0f} Hz "
+                        f"is labeled {', '.join(group.warning_labels)}."
+                    ),
+                )
+            )
+
+    top_peak = peaks[0] if peaks else None
+    if top_peak and top_peak.q_factor is not None and top_peak.q_factor > VERY_HIGH_Q_THRESHOLD:
+        caveats.append(
+            ResponseCaveat(
+                id="very_high_q_peak",
+                severity="review",
+                message=(
+                    "Very narrow dominant peak; treat the Q proxy as device- and "
+                    "tonal-artifact-sensitive rather than room-mode certainty."
+                ),
+            )
+        )
+
+    return _prioritized_caveats(caveats)
+
+
+def _response_balance_caveats(
+    trace_label: Literal["matched", "deconvolved"],
+    trace: ResponseTrace,
+) -> list[ResponseCaveat]:
+    if trace.direct_to_late_db is None:
+        return []
+
+    if trace_label == "matched":
+        source = "matched-filter response"
+        caveat_prefix = "matched"
+    else:
+        source = "regularized deconvolved response"
+        caveat_prefix = "deconvolved"
+
+    ratio = trace.direct_to_late_db
+    if ratio >= DIRECT_PATH_DOMINANCE_DB:
+        return [
+            ResponseCaveat(
+                id=f"{caveat_prefix}_direct_path_dominant",
+                severity="info",
+                message=(
+                    f"Direct-path energy dominates the {source}; room-response "
+                    "descriptors may understate later reflections."
+                ),
+            )
+        ]
+    if ratio <= LATE_RESPONSE_DOMINANCE_DB:
+        return [
+            ResponseCaveat(
+                id=f"{caveat_prefix}_late_response_dominant",
+                severity="review",
+                message=(
+                    f"Late response energy exceeds the direct-path estimate in the {source}; "
+                    "placement and nearby reflections may strongly shape this fingerprint."
+                ),
+            )
+        ]
+    return []
+
+
+def _prioritized_caveats(
+    caveats: list[ResponseCaveat],
+    *,
+    max_count: int = 8,
+) -> list[ResponseCaveat]:
+    unique: list[ResponseCaveat] = []
+    seen: set[str] = set()
+    for caveat in caveats:
+        if caveat.id in seen:
+            continue
+        unique.append(caveat)
+        seen.add(caveat.id)
+
+    severity_rank = {"warning": 0, "review": 1, "info": 2}
+    id_rank = {
+        "weak_alignment": 0,
+        "low_snr": 1,
+        "very_high_q_peak": 2,
+        "ambiguous_matched_direct_path": 3,
+    }
+    return sorted(
+        unique,
+        key=lambda caveat: (
+            severity_rank[caveat.severity],
+            id_rank.get(caveat.id, 50),
+            unique.index(caveat),
+        ),
+    )[:max_count]
 
 
 def estimate_decay(
@@ -1153,6 +1657,73 @@ def _hz_to_mel(hz: float | npt.NDArray[np.float64]) -> float | npt.NDArray[np.fl
 
 def _mel_to_hz(mel: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     return 700.0 * (np.power(10.0, mel / 2595.0) - 1.0)
+
+
+def _dct_type_ii_ortho(
+    values: npt.NDArray[np.float64],
+    coefficient_count: int,
+) -> npt.NDArray[np.float64]:
+    row_count = values.shape[0]
+    if row_count <= 0:
+        return np.empty((0, values.shape[1] if values.ndim == 2 else 0), dtype=np.float64)
+    coefficient_count = max(1, min(int(coefficient_count), row_count))
+    coefficient_indices = np.arange(coefficient_count, dtype=np.float64)[:, np.newaxis]
+    mel_indices = np.arange(row_count, dtype=np.float64)[np.newaxis, :]
+    basis = np.cos(math.pi / row_count * (mel_indices + 0.5) * coefficient_indices)
+    basis[0, :] *= math.sqrt(1.0 / row_count)
+    if coefficient_count > 1:
+        basis[1:, :] *= math.sqrt(2.0 / row_count)
+    return basis @ values
+
+
+def _response_trace_shape(
+    times: npt.NDArray[np.float64],
+    envelope: npt.NDArray[np.float64],
+    *,
+    direct_half_window_seconds: float = 0.004,
+    late_offset_seconds: float = 0.012,
+    min_late_window_seconds: float = 0.050,
+) -> tuple[float | None, float | None]:
+    if times.size == 0 or envelope.size == 0 or times.size != envelope.size:
+        return None, None
+    peak_index = int(np.argmax(envelope))
+    peak_time_seconds = float(times[peak_index])
+    if times[-1] < peak_time_seconds + late_offset_seconds + min_late_window_seconds:
+        return peak_time_seconds, None
+    power = np.square(envelope)
+    direct_mask = np.abs(times - peak_time_seconds) <= direct_half_window_seconds
+    late_mask = times >= peak_time_seconds + late_offset_seconds
+    if not np.any(direct_mask) or not np.any(late_mask):
+        return peak_time_seconds, None
+    direct_energy = float(np.sum(power[direct_mask]))
+    late_energy = float(np.sum(power[late_mask]))
+    if direct_energy <= EPSILON or late_energy <= EPSILON:
+        return peak_time_seconds, None
+    direct_to_late_db = 10.0 * math.log10((direct_energy + EPSILON) / (late_energy + EPSILON))
+    return peak_time_seconds, float(direct_to_late_db)
+
+
+def _mode_group_warning_labels(
+    group: list[PeakFeature],
+    dominant: PeakFeature,
+    *,
+    group_width_hz: float = LOW_MODE_GROUP_WIDTH_HZ,
+) -> list[str]:
+    labels: list[str] = []
+    if dominant.q_factor is None:
+        labels.append("unresolved_bandwidth")
+    elif dominant.q_factor > VERY_HIGH_Q_THRESHOLD:
+        labels.append("very_narrow_q")
+    elif dominant.q_factor < 2.0:
+        labels.append("broad_peak")
+    if dominant.prominence_db < 10.0:
+        labels.append("weak_prominence")
+    frequencies = [peak.frequency_hz for peak in group]
+    span_hz = max(frequencies) - min(frequencies) if len(frequencies) > 1 else 0.0
+    has_unresolved_member = any(peak.q_factor is None for peak in group)
+    if len(group) > 1 and (span_hz <= group_width_hz * 0.5 or has_unresolved_member):
+        labels.append("clustered_peaks")
+    return labels
 
 
 def _power_to_db(power: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:

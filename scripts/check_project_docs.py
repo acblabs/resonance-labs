@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 README_REQUIRED_SECTIONS = [
-    "Phase 1 Status",
+    "Status",
     "Quickstart",
     "Docker Compose",
     "Features",
@@ -106,9 +106,9 @@ def check_features() -> list[str]:
 
     text = features.read_text(encoding="utf-8")
     required = (
-        "Current Phase 1 Features",
-        "Planned DSP Features",
-        "Planned Room Fingerprint Features",
+        "Current Platform Features",
+        "Current DSP Features",
+        "Planned Features",
     )
     return [
         f"FEATURES.md is missing the '## {section}' section."

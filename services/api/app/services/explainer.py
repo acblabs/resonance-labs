@@ -105,6 +105,37 @@ def build_evidence_packet(request: LlmExplainRequest) -> dict[str, Any]:
         }
         for band in analysis.dsp.decay_bands[:3]
     ]
+    mfcc = [
+        {
+            "index": coefficient.index,
+            "mean": _round_float(coefficient.mean, 4),
+            "std": _round_float(coefficient.std, 4),
+            "minimum": _round_float(coefficient.minimum, 4),
+            "maximum": _round_float(coefficient.maximum, 4),
+        }
+        for coefficient in analysis.dsp.mfcc.coefficients[:8]
+    ]
+    mode_groups = [
+        {
+            "start_hz": _round_float(group.start_hz, 1),
+            "end_hz": _round_float(group.end_hz, 1),
+            "center_hz": _round_float(group.center_hz, 2),
+            "peak_count": group.peak_count,
+            "dominant_frequency_hz": _round_float(group.dominant_frequency_hz, 2),
+            "max_prominence_db": _round_float(group.max_prominence_db, 2),
+            "q_factor": _round_optional(group.q_factor, 2),
+            "warning_labels": group.warning_labels,
+        }
+        for group in analysis.dsp.mode_groups[:5]
+    ]
+    response_caveats = [
+        {
+            "id": caveat.id,
+            "severity": caveat.severity,
+            "message": caveat.message,
+        }
+        for caveat in analysis.dsp.response_caveats[:8]
+    ]
     evidence: dict[str, Any] = {
         "analysis_id": str(analysis.analysis_id),
         "audio": {
@@ -132,7 +163,36 @@ def build_evidence_packet(request: LlmExplainRequest) -> dict[str, Any]:
             "spectral_rolloff_hz": _round_optional(analysis.dsp.fft.rolloff_hz, 2),
             "spectral_floor_db": _round_optional(analysis.dsp.fft.spectral_floor_db, 2),
             "dominant_peaks": peaks,
+            "mode_groups": mode_groups,
             "transfer_bands": transfer_bands,
+            "response_traces": {
+                "matched_filter": {
+                    "peak_time_seconds": _round_optional(
+                        analysis.dsp.matched_response.peak_time_seconds,
+                        5,
+                    ),
+                    "direct_to_late_db": _round_optional(
+                        analysis.dsp.matched_response.direct_to_late_db,
+                        2,
+                    ),
+                    "points": len(analysis.dsp.matched_response.times_seconds),
+                },
+                "regularized_deconvolution": {
+                    "peak_time_seconds": _round_optional(
+                        analysis.dsp.impulse_response.peak_time_seconds,
+                        5,
+                    ),
+                    "direct_to_late_db": _round_optional(
+                        analysis.dsp.impulse_response.direct_to_late_db,
+                        2,
+                    ),
+                    "regularization": _round_float(
+                        analysis.dsp.impulse_response.regularization,
+                        8,
+                    ),
+                    "points": len(analysis.dsp.impulse_response.times_seconds),
+                },
+            },
             "decay": {
                 "decay_rate_per_second": _round_optional(
                     analysis.dsp.decay.decay_rate_per_second,
@@ -142,6 +202,11 @@ def build_evidence_packet(request: LlmExplainRequest) -> dict[str, Any]:
                 "fit_r2": _round_optional(analysis.dsp.decay.fit_r2, 4),
             },
             "decay_bands": decay_bands,
+            "mfcc": {
+                "method": analysis.dsp.mfcc.method,
+                "coefficients": mfcc,
+            },
+            "response_caveats": response_caveats,
         },
         "operator_question": request.operator_question,
         "raw_audio_present": False,
@@ -197,6 +262,23 @@ def deterministic_explanation(evidence: dict[str, Any]) -> LlmExplanation:
             f"{band['label']} {band['rt60_seconds']:.2f}s" for band in decay_bands[:3]
         )
         observations.append(f"Band-limited RT60 proxies are {band_summary}.")
+    response_balance = _response_balance_observation(dsp.get("response_traces", {}))
+    if response_balance:
+        observations.append(response_balance)
+    mode_groups = dsp.get("mode_groups", [])
+    if mode_groups:
+        strongest = mode_groups[0]
+        labels = ", ".join(strongest.get("warning_labels", [])) or "stable"
+        observations.append(
+            "Low-frequency grouping centers near "
+            f"{strongest['center_hz']:.1f} Hz with labels: {labels}."
+        )
+    mfcc_coefficients = dsp.get("mfcc", {}).get("coefficients", [])
+    if mfcc_coefficients:
+        compact_mfcc = ", ".join(
+            f"C{item['index']} {item['mean']:.2f}" for item in mfcc_coefficients[:4]
+        )
+        observations.append(f"MFCC mean summary begins {compact_mfcc}.")
 
     acoustic_hypotheses: list[str] = []
     if rt60 is None:
@@ -224,13 +306,18 @@ def deterministic_explanation(evidence: dict[str, Any]) -> LlmExplanation:
         "Browser speaker, microphone, device placement, and gain processing affect the response.",
         "No raw audio was sent to the LLM path.",
     ]
+    caveats.extend(
+        str(caveat["message"])
+        for caveat in dsp.get("response_caveats", [])
+        if str(caveat.get("message", "")).strip()
+    )
     caveats.extend(_take_strings(quality.get("warnings", []), limit=3))
 
     next_measurement = [
         (
             "Repeat the same probe without moving the device to check fingerprint stability."
         ),
-        "Capture another position in the same room to compare how the decay map changes.",
+        "Keep the same device position and chirp settings when checking whether caveats clear.",
     ]
     if quality.get("snr_db") is not None and quality["snr_db"] < 12:
         next_measurement.append(
@@ -392,6 +479,27 @@ def _evidence_warnings(evidence: dict[str, Any]) -> list[str]:
     if snr is not None and snr < 12:
         warnings.append("Low SNR; acoustic descriptors may be unstable.")
     return warnings
+
+
+def _response_balance_observation(response_traces: Any) -> str | None:
+    if not isinstance(response_traces, dict):
+        return None
+    matched = response_traces.get("matched_filter")
+    deconvolved = response_traces.get("regularized_deconvolution")
+    parts: list[str] = []
+    if isinstance(matched, dict):
+        parts.append(
+            "matched direct/late "
+            f"{_format_optional(matched.get('direct_to_late_db'), ' dB')}"
+        )
+    if isinstance(deconvolved, dict):
+        parts.append(
+            "deconvolved direct/late "
+            f"{_format_optional(deconvolved.get('direct_to_late_db'), ' dB')}"
+        )
+    if not parts:
+        return None
+    return "Response balance shows " + "; ".join(parts) + "."
 
 
 def _round_float(value: float, digits: int) -> float:

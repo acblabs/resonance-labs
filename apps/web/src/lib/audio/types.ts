@@ -81,10 +81,12 @@ export type TransferBandFeature = {
 };
 
 export type ResponseTrace = {
-  method: "regularized_deconvolution";
+  method: "regularized_deconvolution" | "matched_filter_envelope";
   times_seconds: number[];
   magnitude_db: number[];
   regularization: number;
+  peak_time_seconds: number | null;
+  direct_to_late_db: number | null;
 };
 
 export type PeakFeature = {
@@ -112,6 +114,37 @@ export type DecayBandFeature = {
   fit_r2: number | null;
 };
 
+export type MfccCoefficientFeature = {
+  index: number;
+  mean: number;
+  std: number;
+  minimum: number;
+  maximum: number;
+};
+
+export type MfccSummaryFeature = {
+  method: "log_mel_dct_ii";
+  coefficients: MfccCoefficientFeature[];
+};
+
+export type ModeGroupFeature = {
+  start_hz: number;
+  end_hz: number;
+  center_hz: number;
+  peak_count: number;
+  frequencies_hz: number[];
+  dominant_frequency_hz: number;
+  max_prominence_db: number;
+  q_factor: number | null;
+  warning_labels: string[];
+};
+
+export type ResponseCaveatFeature = {
+  id: string;
+  severity: "info" | "review" | "warning";
+  message: string;
+};
+
 export type DspAnalysis = {
   bandpass_low_hz: number;
   bandpass_high_hz: number;
@@ -121,9 +154,13 @@ export type DspAnalysis = {
   mel_spectrogram: SpectrogramGrid;
   transfer_response: TransferBandFeature[];
   impulse_response: ResponseTrace;
+  matched_response: ResponseTrace;
+  mfcc: MfccSummaryFeature;
   dominant_peaks: PeakFeature[];
+  mode_groups: ModeGroupFeature[];
   decay: DecayFeature;
   decay_bands: DecayBandFeature[];
+  response_caveats: ResponseCaveatFeature[];
 };
 
 export type AnalysisResponse = {

@@ -23,8 +23,12 @@ from app.schemas import (
     DecayFeature,
     DspAnalysis,
     FrequencySeries,
+    MfccCoefficientFeature,
+    MfccSummaryFeature,
+    ModeGroupFeature,
     PeakFeature,
     ProbeMetadata,
+    ResponseCaveatFeature,
     ResponseTrace,
     SpectralFeatures,
     SpectrogramGrid,
@@ -157,6 +161,9 @@ def _build_warnings(
         )
     if not dsp_analysis.dominant_peaks:
         warnings.append("No dominant ring-down peaks cleared the Phase 2 prominence threshold.")
+    for caveat in dsp_analysis.response_caveats:
+        if caveat.severity == "warning" and caveat.message not in warnings:
+            warnings.append(caveat.message)
     return warnings
 
 
@@ -263,6 +270,29 @@ def _dsp_response(analysis: ChirpDspAnalysis) -> DspAnalysis:
             times_seconds=analysis.impulse_response.times_seconds,
             magnitude_db=analysis.impulse_response.magnitude_db,
             regularization=analysis.impulse_response.regularization,
+            peak_time_seconds=analysis.impulse_response.peak_time_seconds,
+            direct_to_late_db=analysis.impulse_response.direct_to_late_db,
+        ),
+        matched_response=ResponseTrace(
+            method=analysis.matched_response.method,
+            times_seconds=analysis.matched_response.times_seconds,
+            magnitude_db=analysis.matched_response.magnitude_db,
+            regularization=analysis.matched_response.regularization,
+            peak_time_seconds=analysis.matched_response.peak_time_seconds,
+            direct_to_late_db=analysis.matched_response.direct_to_late_db,
+        ),
+        mfcc=MfccSummaryFeature(
+            method=analysis.mfcc.method,
+            coefficients=[
+                MfccCoefficientFeature(
+                    index=coefficient.index,
+                    mean=coefficient.mean,
+                    std=coefficient.std,
+                    minimum=coefficient.minimum,
+                    maximum=coefficient.maximum,
+                )
+                for coefficient in analysis.mfcc.coefficients
+            ],
         ),
         dominant_peaks=[
             PeakFeature(
@@ -272,6 +302,20 @@ def _dsp_response(analysis: ChirpDspAnalysis) -> DspAnalysis:
                 q_factor=peak.q_factor,
             )
             for peak in analysis.dominant_peaks
+        ],
+        mode_groups=[
+            ModeGroupFeature(
+                start_hz=group.start_hz,
+                end_hz=group.end_hz,
+                center_hz=group.center_hz,
+                peak_count=group.peak_count,
+                frequencies_hz=group.frequencies_hz,
+                dominant_frequency_hz=group.dominant_frequency_hz,
+                max_prominence_db=group.max_prominence_db,
+                q_factor=group.q_factor,
+                warning_labels=group.warning_labels,
+            )
+            for group in analysis.mode_groups
         ],
         decay=DecayFeature(
             method=analysis.decay.method,
@@ -291,5 +335,13 @@ def _dsp_response(analysis: ChirpDspAnalysis) -> DspAnalysis:
                 fit_r2=band.fit_r2,
             )
             for band in analysis.decay_bands
+        ],
+        response_caveats=[
+            ResponseCaveatFeature(
+                id=caveat.id,
+                severity=caveat.severity,
+                message=caveat.message,
+            )
+            for caveat in analysis.response_caveats
         ],
     )

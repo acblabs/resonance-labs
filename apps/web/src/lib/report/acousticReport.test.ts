@@ -308,6 +308,24 @@ function makeAnalysis(
         times_seconds: [0, 0.01, 0.02],
         magnitude_db: [-12, 0, -24],
         regularization: 0.0001,
+        peak_time_seconds: 0.01,
+        direct_to_late_db: 7.5,
+      },
+      matched_response: {
+        method: "matched_filter_envelope",
+        times_seconds: [0, 0.01, 0.02],
+        magnitude_db: [-18, 0, -30],
+        regularization: 0,
+        peak_time_seconds: 0.01,
+        direct_to_late_db: 9.2,
+      },
+      mfcc: {
+        method: "log_mel_dct_ii",
+        coefficients: [
+          { index: 0, mean: -41.2, std: 2.1, minimum: -45.5, maximum: -38.4 },
+          { index: 1, mean: 8.3, std: 1.2, minimum: 6.2, maximum: 10.1 },
+          { index: 2, mean: -3.4, std: 0.9, minimum: -5.0, maximum: -2.1 },
+        ],
       },
       dominant_peaks: [
         {
@@ -317,6 +335,7 @@ function makeAnalysis(
           q_factor: qFactor,
         },
       ],
+      mode_groups: [],
       decay: {
         method: "rms_envelope_log_linear",
         decay_rate_per_second: 8.45,
@@ -349,6 +368,14 @@ function makeAnalysis(
           decay_rate_per_second: 10.5,
           rt60_seconds: 0.658,
           fit_r2: 0.62,
+        },
+      ],
+      response_caveats: [
+        {
+          id: "direct_path_dominant",
+          severity: "info",
+          message:
+            "Direct-path energy dominates the deconvolved response; room-response descriptors may understate later reflections.",
         },
       ],
     },

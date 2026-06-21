@@ -8,16 +8,27 @@ from pathlib import Path
 import numpy as np
 from resonancelab.audio import decode_wav_pcm
 from resonancelab.dsp import (
+    AlignmentResult,
     ChirpSpec,
+    DecayEstimate,
+    PeakFeature,
+    ResponseTrace,
     analyze_chirp_response,
     apply_fft_bandpass,
     compute_impulse_response,
+    compute_matched_response,
+    compute_mfcc_summary,
     compute_transfer_response,
     estimate_decay,
     find_dominant_peaks,
     generate_log_chirp,
+    group_low_frequency_modes,
 )
-from resonancelab.dsp.analysis import _estimate_q_factor
+from resonancelab.dsp.analysis import (
+    _estimate_q_factor,
+    _response_trace_shape,
+    build_response_caveats,
+)
 
 FIXTURES_DIR = Path(__file__).with_name("fixtures")
 FIXTURE_PATH = FIXTURES_DIR / "phase2_golden_probe.json"
@@ -110,8 +121,15 @@ class Phase2DspGoldenTests(unittest.TestCase):
             len(analysis.impulse_response.times_seconds),
             len(analysis.impulse_response.magnitude_db),
         )
+        self.assertEqual(analysis.matched_response.method, "matched_filter_envelope")
+        self.assertGreater(len(analysis.matched_response.times_seconds), 10)
+        self.assertGreaterEqual(len(analysis.mfcc.coefficients), 8)
+        self.assertTrue(
+            all(math.isfinite(coefficient.mean) for coefficient in analysis.mfcc.coefficients)
+        )
         self.assertEqual({band.label for band in analysis.decay_bands}, {"low", "mid", "high"})
         self.assertTrue(any(band.rt60_seconds is not None for band in analysis.decay_bands))
+        self.assertTrue(analysis.response_caveats)
 
     def test_recorded_style_wav_fixture_exercises_colored_probe(self) -> None:
         fixture = json.loads((FIXTURES_DIR / "phase2_recorded_style_probe.json").read_text())
@@ -295,6 +313,26 @@ class Phase2DspGoldenTests(unittest.TestCase):
         self.assertAlmostEqual(max(trace.magnitude_db), 0.0, places=6)
         self.assertTrue(all(math.isfinite(value) for value in trace.magnitude_db))
 
+    def test_matched_response_recovers_delayed_chirp_start(self) -> None:
+        reference = generate_log_chirp(GOLDEN_CHIRP, SAMPLE_RATE_HZ)
+        delay_seconds = 0.011
+        delay_samples = int(round(delay_seconds * SAMPLE_RATE_HZ))
+        captured = np.zeros(reference.size + int(round(0.08 * SAMPLE_RATE_HZ)))
+        captured[delay_samples : delay_samples + reference.size] += reference
+
+        trace = compute_matched_response(
+            captured,
+            reference,
+            SAMPLE_RATE_HZ,
+            max_seconds=0.06,
+        )
+
+        self.assertEqual(trace.method, "matched_filter_envelope")
+        self.assertGreater(len(trace.times_seconds), 20)
+        self.assertIsNotNone(trace.peak_time_seconds)
+        self.assertAlmostEqual(trace.peak_time_seconds or 0.0, delay_seconds, delta=0.002)
+        self.assertAlmostEqual(max(trace.magnitude_db), 0.0, places=6)
+
     def test_impulse_proxy_returns_empty_for_zero_energy_reference(self) -> None:
         trace = compute_impulse_response(
             np.ones(256, dtype=np.float64),
@@ -450,6 +488,145 @@ class Phase2DspGoldenTests(unittest.TestCase):
 
         self.assertIsNotNone(q_factor)
         self.assertAlmostEqual(q_factor or 0.0, 1000.0 / expected_bandwidth, delta=0.5)
+
+    def test_mfcc_summary_returns_finite_cepstral_statistics(self) -> None:
+        time = np.arange(int(0.5 * SAMPLE_RATE_HZ), dtype=np.float64) / SAMPLE_RATE_HZ
+        samples = 0.20 * np.sin(2.0 * math.pi * 700.0 * time)
+        samples += 0.08 * np.sin(2.0 * math.pi * 1400.0 * time)
+
+        summary = compute_mfcc_summary(
+            samples,
+            SAMPLE_RATE_HZ,
+            min_hz=100.0,
+            max_hz=4000.0,
+        )
+
+        self.assertEqual(summary.method, "log_mel_dct_ii")
+        self.assertEqual(
+            [coefficient.index for coefficient in summary.coefficients],
+            list(range(13)),
+        )
+        for coefficient in summary.coefficients:
+            self.assertTrue(math.isfinite(coefficient.mean))
+            self.assertGreaterEqual(coefficient.maximum, coefficient.minimum)
+
+    def test_low_frequency_mode_group_labels_unresolved_and_clustered_peaks(self) -> None:
+        groups = group_low_frequency_modes(
+            [
+                PeakFeature(
+                    frequency_hz=182.0,
+                    magnitude_db=-28.0,
+                    prominence_db=9.0,
+                    q_factor=None,
+                ),
+                PeakFeature(
+                    frequency_hz=238.0,
+                    magnitude_db=-30.0,
+                    prominence_db=8.0,
+                    q_factor=420.0,
+                ),
+                PeakFeature(
+                    frequency_hz=1240.0,
+                    magnitude_db=-20.0,
+                    prominence_db=14.0,
+                    q_factor=12.0,
+                ),
+            ]
+        )
+
+        self.assertEqual(len(groups), 1)
+        self.assertAlmostEqual(groups[0].center_hz, 210.0, delta=1.0)
+        self.assertIn("unresolved_bandwidth", groups[0].warning_labels)
+        self.assertIn("weak_prominence", groups[0].warning_labels)
+        self.assertIn("clustered_peaks", groups[0].warning_labels)
+
+    def test_low_frequency_mode_group_does_not_cluster_resolved_wide_pair(self) -> None:
+        groups = group_low_frequency_modes(
+            [
+                PeakFeature(
+                    frequency_hz=120.0,
+                    magnitude_db=-28.0,
+                    prominence_db=12.0,
+                    q_factor=8.0,
+                ),
+                PeakFeature(
+                    frequency_hz=198.0,
+                    magnitude_db=-30.0,
+                    prominence_db=11.0,
+                    q_factor=7.0,
+                ),
+            ]
+        )
+
+        self.assertEqual(len(groups), 1)
+        self.assertNotIn("clustered_peaks", groups[0].warning_labels)
+
+    def test_response_trace_shape_requires_enough_late_window(self) -> None:
+        times = np.arange(int(0.04 * SAMPLE_RATE_HZ), dtype=np.float64) / SAMPLE_RATE_HZ
+        envelope = np.exp(-80.0 * times)
+
+        peak_time, direct_to_late = _response_trace_shape(times, envelope)
+
+        self.assertAlmostEqual(peak_time or 0.0, 0.0, places=6)
+        self.assertIsNone(direct_to_late)
+
+    def test_response_caveats_prioritize_high_q_and_unique_low_mode_ids(self) -> None:
+        peaks = [
+            PeakFeature(760.0, -6.0, 18.0, 550.0),
+            PeakFeature(118.0, -28.0, 8.0, None),
+            PeakFeature(148.0, -29.0, 7.0, None),
+            PeakFeature(288.0, -31.0, 8.5, None),
+            PeakFeature(318.0, -32.0, 7.5, None),
+            PeakFeature(438.0, -34.0, 8.0, None),
+            PeakFeature(468.0, -35.0, 7.2, None),
+        ]
+        mode_groups = group_low_frequency_modes(peaks)
+
+        caveats = build_response_caveats(
+            alignment=AlignmentResult(
+                method="matched_filter_log_chirp",
+                confidence=0.1,
+                detected_start_sample=None,
+                expected_start_sample=0,
+                selected_start_sample=0,
+                offset_samples=None,
+                estimated_latency_ms=None,
+                detected_start_seconds=None,
+                expected_start_seconds=0.0,
+            ),
+            signal_to_noise_db=8.0,
+            matched_response=ResponseTrace(
+                method="matched_filter_envelope",
+                times_seconds=[0.0, 0.1],
+                magnitude_db=[0.0, -20.0],
+                regularization=0.0,
+                peak_time_seconds=0.04,
+                direct_to_late_db=-9.0,
+            ),
+            impulse_response=ResponseTrace(
+                method="regularized_deconvolution",
+                times_seconds=[0.0, 0.1],
+                magnitude_db=[0.0, -18.0],
+                regularization=0.0001,
+                peak_time_seconds=0.006,
+                direct_to_late_db=14.0,
+            ),
+            decay=DecayEstimate(
+                method="rms_envelope_log_linear",
+                decay_rate_per_second=None,
+                rt60_seconds=None,
+                fit_r2=None,
+                window_start_seconds=0.6,
+                window_end_seconds=1.0,
+            ),
+            peaks=peaks,
+            mode_groups=mode_groups,
+        )
+
+        caveat_ids = [caveat.id for caveat in caveats]
+        self.assertLessEqual(len(caveats), 8)
+        self.assertEqual(len(caveat_ids), len(set(caveat_ids)))
+        self.assertIn("very_high_q_peak", caveat_ids)
 
 
 def _tone_amplitude(samples: np.ndarray, frequency_hz: float) -> float:

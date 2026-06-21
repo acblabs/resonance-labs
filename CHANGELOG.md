@@ -7,8 +7,12 @@ All notable changes to ResonanceLab will be documented in this file.
 ### Added
 
 - Compact zero-padded regularized impulse-envelope proxy in `/api/v1/analyze`, report exports, and DSP regression tests.
-- More conservative low/mid/high band-limited decay estimates for controlled repeat comparisons and report visualization.
-- Browser-local comparison of two exported JSON acoustic reports, including metric deltas, transfer-band deltas, and capture-condition caveats.
+- Matched-filter impulse-response traces alongside regularized deconvolved-response traces in `/api/v1/analyze`, the Lab UI, and PNG report exports.
+- MFCC summary statistics from log-mel/DCT cepstral coefficients.
+- Low-frequency mode grouping with warning labels for weak, narrow, broad, clustered, or unresolved peaks.
+- Direct-path and room-response caveats for weak alignment, low SNR, direct/late response balance, unstable decay, high-Q peaks, and low-mode uncertainty.
+- More conservative low/mid/high band-limited decay estimates for frequency-dependent decay diagnostics and report visualization.
+- Lab UI tabs for matched impulse-response and deconvolved-response traces, plus a decay-band visualization panel.
 - Polished PNG report panels for capture metadata, impulse-envelope proxy, and decay-band summaries.
 - Lab UI JSON and PNG acoustic report export with derived DSP evidence, validation checks, descriptors, caveats, and optional explanation output.
 - Device run-quality validation for alignment, SNR, duration, sample rate, peak amplitude, capture path, browser processing, and decay fit.
@@ -25,12 +29,12 @@ All notable changes to ResonanceLab will be documented in this file.
 - GCP Cloud Run deployment guide covering private trigger substitutions, service account hygiene, and public-safe project configuration.
 - `.gcloudignore` coverage for local GCP notes, service account key files, private datasets, and generated artifacts.
 - Analytic damped-sinusoid DSP regression coverage for independent peak and decay-rate checks.
-- Phase 2 NumPy DSP pipeline with matched-filter chirp alignment, FFT-domain bandpass filtering, FFT/STFT/mel outputs, transfer-response bands, dominant peak detection, and decay estimates.
+- NumPy DSP pipeline with matched-filter chirp alignment, FFT-domain bandpass filtering, FFT/STFT/mel outputs, transfer-response bands, dominant peak detection, and decay estimates.
 - Browser waveform, FFT, STFT, and mel-spectrogram signal views.
 - Deterministic golden DSP tests for alignment, bandpass attenuation, spectrogram shape, peak detection, post-window fallback timing, and decay-fit edge cases.
 - Committed recorded-style WAV fixture for chirp analysis tests.
 - Cross-language chirp fixture and tests to keep browser and Python chirp generation aligned.
-- Phase 1 browser chirp capture and WAV upload scaffold.
+- Browser chirp capture and WAV upload scaffold.
 - FastAPI analysis endpoint with WAV metrics and DSP features.
 - Docker Compose development stack.
 - Local Git hook and project freshness checker for README, CHANGELOG, FEATURES, and SKILL.md files.
@@ -38,10 +42,11 @@ All notable changes to ResonanceLab will be documented in this file.
 ### Changed
 
 - Raised the default Gemini explanation output cap and wired it through Cloud Build deployment substitutions.
+- Consolidated planned-feature documentation and removed completed phase labels from project docs.
 - Lab layout now uses more of wide desktop viewports with sticky controls, a larger signal panel, and denser result grids.
 - Reoriented the app and docs toward room acoustic fingerprints and acoustic report generation.
 - Lab UI now presents room character, brightness, dominant mode, RT60 proxy, transfer bands, and acoustic hypotheses.
-- `/api/v1/models` now reports `phase_4_room_fingerprint`.
+- `/api/v1/models` now reports room-fingerprint status.
 - `/api/v1/explain` now accepts analysis JSON only and returns `acoustic_hypotheses`.
 - Cloud Build deployment has been simplified to one web service and one API service with no capture-mode substitutions.
 - API settings no longer include private capture flags, buckets, local inboxes, or operator tokens.
@@ -79,9 +84,11 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Removed
 
+- Exported JSON report comparison references from the active feature list and forward-looking documentation.
+
 - Browser-local object-state profile UI and IndexedDB helpers.
 - Prior private capture endpoint, operator panel, capture settings, and GCS/local inbox storage code.
 - Offline supervised object-state ML package, manifest tooling, benchmark scripts, model-card placeholder, notebook skeleton, and ML dependency file.
-- Capture-mode Cloud Build substitutions, capture secrets, and the private Phase 4 Cloud Build pipeline.
+- Capture-mode Cloud Build substitutions, capture secrets, and the prior private Cloud Build pipeline.
 - Obsolete docs for the prior object-state recording, private capture workflow, manifest schema, and supervised baseline workflow.
 - GitHub Actions workflow in favor of GCP Cloud Build.
