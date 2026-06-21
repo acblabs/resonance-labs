@@ -197,6 +197,10 @@ export type LlmExplanation = {
   summary: string;
   observations: string[];
   acoustic_hypotheses: string[];
+  experiment_design: string[];
+  physics_tutoring: string[];
+  troubleshooting: string[];
+  evidence_critique: string[];
   caveats: string[];
   next_measurement: string[];
 };

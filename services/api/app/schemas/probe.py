@@ -267,6 +267,10 @@ class LlmExplanation(BaseModel):
     summary: str
     observations: list[str] = Field(max_length=8)
     acoustic_hypotheses: list[str] = Field(max_length=8)
+    experiment_design: list[str] = Field(max_length=8)
+    physics_tutoring: list[str] = Field(max_length=8)
+    troubleshooting: list[str] = Field(max_length=8)
+    evidence_critique: list[str] = Field(max_length=8)
     caveats: list[str] = Field(max_length=8)
     next_measurement: list[str] = Field(max_length=8)
 

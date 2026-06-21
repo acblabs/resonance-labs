@@ -73,7 +73,7 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 - PNG acoustic report export now includes capture metadata, matched impulse/deconvolved response traces, and low/mid/high decay bands.
 - Golden public-safe report analysis fixture covering report-building and validation semantics.
 - Structured `/api/v1/explain` endpoint for compact DSP evidence.
-- Lab UI explanation panel for observations, acoustic hypotheses, caveats, and next-measurement guidance.
+- Lab UI explanation panel for observations, acoustic hypotheses, experiment design assistance, physics tutoring, low-confidence troubleshooting, evidence critique, caveats, and next-measurement guidance.
 - Optional Gemini lab-assistant path using `gemini-3.1-pro-preview`, `global`, and `HIGH` thinking level through Cloud Run service identity.
 - Raw WAV files are excluded from the LLM explanation request path by schema and UI behavior.
 - Public Cloud Run deploys keep Gemini LLM calls disabled by default while preserving the deterministic explanation response.
@@ -97,7 +97,4 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 
 - No active planned DSP items.
 - No active planned room fingerprint items.
-- Experiment design assistance.
-- Physics tutoring for chirps, FFTs, room modes, and damping.
-- Low-confidence troubleshooting guidance.
-- Optional second-pass textual critique over the same structured evidence once the Gemini path is stable.
+- No active planned lab-assistant items.

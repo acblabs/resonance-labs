@@ -19,8 +19,9 @@ Explain only from the supplied structured DSP evidence.
 Frame outputs as room acoustic fingerprints, not spatial maps or object identity claims.
 Do not claim medical, legal, safety, material, or geometry certainty.
 Do not ask for or infer from raw audio. The raw WAV is intentionally absent.
-Return compact JSON with keys: summary, observations, acoustic_hypotheses, caveats,
-next_measurement.
+Return compact JSON with keys: summary, observations, acoustic_hypotheses,
+experiment_design, physics_tutoring, troubleshooting, evidence_critique,
+caveats, next_measurement.
 Each list should contain short, evidence-grounded strings."""
 
 
@@ -328,9 +329,169 @@ def deterministic_explanation(evidence: dict[str, Any]) -> LlmExplanation:
         summary=summary,
         observations=observations[:6],
         acoustic_hypotheses=acoustic_hypotheses[:4],
+        experiment_design=_experiment_design_guidance(evidence)[:6],
+        physics_tutoring=_physics_tutoring(evidence)[:6],
+        troubleshooting=_troubleshooting_guidance(evidence)[:6],
+        evidence_critique=_evidence_critique(evidence)[:6],
         caveats=caveats[:6],
         next_measurement=next_measurement[:5],
     )
+
+
+def _experiment_design_guidance(evidence: dict[str, Any]) -> list[str]:
+    quality = evidence["quality"]
+    probe = evidence["probe"]
+    dsp = evidence["dsp"]
+
+    guidance = [
+        (
+            "Collect at least three repeats without moving the device, then compare "
+            "alignment, SNR, RT60 proxy, transfer bands, and dominant peaks."
+        ),
+        (
+            "For before/after tests, change only one factor at a time: device position, "
+            "playback volume, acoustic treatment, door state, or furnishing state."
+        ),
+        (
+            "Keep the chirp fixed at "
+            f"{probe['start_hz']}-{probe['end_hz']} Hz for "
+            f"{probe['duration_ms']} ms when comparing reports."
+        ),
+    ]
+    if quality.get("snr_db") is not None and quality["snr_db"] < 18:
+        guidance.append(
+            "Run a quieter-room or slightly louder-speaker repeat before using this "
+            "capture as the baseline."
+        )
+    if dsp.get("mode_groups"):
+        guidance.append(
+            "If modal peaks matter, repeat after moving the device a small distance to "
+            "check whether the same peak group persists."
+        )
+    decay_fit = dsp.get("decay", {}).get("fit_r2")
+    if decay_fit is not None and decay_fit < 0.55:
+        guidance.append(
+            "Extend post-roll or reduce noise in a follow-up run before relying on "
+            "decay comparisons."
+        )
+    return guidance
+
+
+def _physics_tutoring(evidence: dict[str, Any]) -> list[str]:
+    dsp = evidence["dsp"]
+    top_peak = _first(dsp.get("dominant_peaks", []))
+    rt60 = dsp.get("decay", {}).get("rt60_seconds")
+
+    tutoring = [
+        (
+            "A logarithmic chirp sweeps low to high frequencies so the matched filter "
+            "can align the received sweep and expose early energy plus ring-down."
+        ),
+        (
+            "The FFT summary describes frequency coloration: centroid tracks the "
+            "spectral center of mass and rolloff marks where most energy has accumulated."
+        ),
+    ]
+    if top_peak:
+        q_factor = top_peak.get("q_factor")
+        q_text = "unknown Q" if q_factor is None else f"Q {q_factor:.1f}"
+        tutoring.append(
+            "A room-mode candidate is a prominent narrow spectral feature; this run's "
+            f"strongest peak is near {top_peak['frequency_hz']:.1f} Hz with {q_text}."
+        )
+    if rt60 is not None:
+        tutoring.append(
+            "The RT60 proxy estimates how long the envelope would take to decay by "
+            f"60 dB if the fitted decay trend continued; this run reports {rt60:.2f}s."
+        )
+    slowest = _slowest_decay_band(dsp.get("decay_bands", []))
+    if slowest:
+        tutoring.append(
+            "Damping is frequency-dependent here: the "
+            f"{slowest['label']} band has the slowest measured decay proxy."
+        )
+    return tutoring
+
+
+def _troubleshooting_guidance(evidence: dict[str, Any]) -> list[str]:
+    quality = evidence["quality"]
+    dsp = evidence["dsp"]
+    audio = evidence["audio"]
+    troubleshooting: list[str] = []
+
+    alignment = quality["alignment_confidence"]
+    if alignment < 0.5:
+        troubleshooting.append(
+            "Alignment is below the preferred threshold; keep the device still, avoid "
+            "external sound, and verify the chirp is audible from the speaker."
+        )
+    snr = quality.get("snr_db")
+    if snr is None:
+        troubleshooting.append(
+            "SNR was not available; leave clean pre-roll silence before the chirp and "
+            "avoid talking or moving near the microphone."
+        )
+    elif snr < 18:
+        troubleshooting.append(
+            "SNR is below the preferred threshold; reduce background noise or raise "
+            "speaker volume while staying below clipping."
+        )
+    if audio.get("capture_path") != "audio_worklet":
+        troubleshooting.append(
+            "Capture did not use AudioWorklet; repeat in a browser/origin where the "
+            "worklet recorder loads for more predictable timing."
+        )
+    decay = dsp.get("decay", {})
+    if decay.get("rt60_seconds") is None or (
+        decay.get("fit_r2") is not None and decay["fit_r2"] < 0.55
+    ):
+        troubleshooting.append(
+            "Decay confidence is weak; use a longer post-roll, quieter room, or repeat "
+            "without moving the device."
+        )
+    for caveat in dsp.get("response_caveats", []):
+        if caveat.get("severity") in {"review", "warning"}:
+            troubleshooting.append(str(caveat["message"]))
+    if not troubleshooting:
+        troubleshooting.append(
+            "No low-confidence blocker is visible; prioritize repeat stability before "
+            "making before/after claims."
+        )
+    return troubleshooting
+
+
+def _evidence_critique(evidence: dict[str, Any]) -> list[str]:
+    quality = evidence["quality"]
+    dsp = evidence["dsp"]
+
+    critique = [
+        (
+            "The evidence supports relative room-fingerprint comparisons, not room "
+            "geometry, object identity, material certainty, or medical/safety claims."
+        ),
+        (
+            "A single run cannot prove repeatability; confidence improves when repeated "
+            "captures preserve the same alignment, SNR, transfer bands, and peak groups."
+        ),
+    ]
+    if quality["alignment_confidence"] < 0.5:
+        critique.append(
+            "Weak alignment makes timing, transfer, and decay interpretations more fragile."
+        )
+    if quality.get("snr_db") is not None and quality["snr_db"] < 18:
+        critique.append(
+            "The noise floor is high enough that weaker peaks or decay tails may be unstable."
+        )
+    if _any_very_high_q(dsp.get("dominant_peaks", [])):
+        critique.append(
+            "Very high Q values can indicate device or tonal artifacts as well as room "
+            "resonance, so treat them as candidates."
+        )
+    if not dsp.get("mode_groups"):
+        critique.append(
+            "No low-mode grouping was retained, so modal interpretation should stay broad."
+        )
+    return critique
 
 
 def _generate_vertex_gemini_explanation(
@@ -367,6 +528,10 @@ def _generate_vertex_gemini_explanation(
             "summary": text,
             "observations": fallback.observations,
             "acoustic_hypotheses": fallback.acoustic_hypotheses,
+            "experiment_design": fallback.experiment_design,
+            "physics_tutoring": fallback.physics_tutoring,
+            "troubleshooting": fallback.troubleshooting,
+            "evidence_critique": fallback.evidence_critique,
             "caveats": fallback.caveats,
             "next_measurement": fallback.next_measurement,
         }
@@ -392,7 +557,8 @@ def _vertex_client(project_id: str | None, location: str):
 def _prompt_from_evidence(evidence: dict[str, Any]) -> str:
     return (
         "Explain this ResonanceLab probe result from structured evidence only. "
-        "Separate measured observations from acoustic hypotheses and caveats.\n\n"
+        "Separate measured observations, acoustic hypotheses, experiment design, "
+        "physics tutoring, troubleshooting, evidence critique, and caveats.\n\n"
         f"{json.dumps(evidence, sort_keys=True, separators=(',', ':'))}"
     )
 
@@ -465,6 +631,10 @@ def _coerce_explanation(payload: dict[str, Any], fallback: LlmExplanation) -> Ll
             payload.get("acoustic_hypotheses"),
             fallback.acoustic_hypotheses,
         ),
+        experiment_design=_list_or(payload.get("experiment_design"), fallback.experiment_design),
+        physics_tutoring=_list_or(payload.get("physics_tutoring"), fallback.physics_tutoring),
+        troubleshooting=_list_or(payload.get("troubleshooting"), fallback.troubleshooting),
+        evidence_critique=_list_or(payload.get("evidence_critique"), fallback.evidence_critique),
         caveats=_list_or(payload.get("caveats"), fallback.caveats),
         next_measurement=_list_or(payload.get("next_measurement"), fallback.next_measurement),
     )
@@ -512,6 +682,24 @@ def _round_optional(value: float | None, digits: int) -> float | None:
 
 def _first(values: list[dict[str, Any]]) -> dict[str, Any] | None:
     return values[0] if values else None
+
+
+def _slowest_decay_band(values: list[dict[str, Any]]) -> dict[str, Any] | None:
+    decay_bands = [
+        band
+        for band in values
+        if band.get("rt60_seconds") is not None
+    ]
+    if not decay_bands:
+        return None
+    return max(decay_bands, key=lambda band: band["rt60_seconds"])
+
+
+def _any_very_high_q(values: list[dict[str, Any]]) -> bool:
+    return any(
+        peak.get("q_factor") is not None and peak["q_factor"] > 300
+        for peak in values
+    )
 
 
 def _format_optional(value: float | None, suffix: str) -> str:

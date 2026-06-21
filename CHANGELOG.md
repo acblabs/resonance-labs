@@ -23,7 +23,7 @@ All notable changes to ResonanceLab will be documented in this file.
 - Room Acoustic Fingerprint product direction for chirp response, impulse/transfer evidence, spectrograms, decay, modes, and room descriptors.
 - Acoustic Image export roadmap covering polished PNG reports with response plots, spectrograms, decay bands, detected modes, descriptors, and caveats.
 - Structured `/api/v1/explain` endpoint with deterministic fallback summaries and optional Gemini lab-assistant calls over compact DSP evidence.
-- Lab UI explanation panel for observations, acoustic hypotheses, caveats, and next-measurement guidance.
+- Lab UI explanation panel for observations, acoustic hypotheses, experiment design assistance, physics tutoring, low-confidence troubleshooting, evidence critique, caveats, and next-measurement guidance.
 - Cloud Run deployment path in Cloud Build, gated by `_DEPLOY_TARGET=cloud-run` so default and PR builds do not deploy.
 - Cloud Run API and web deploys now explicitly use the second-generation execution environment with startup CPU boost enabled.
 - GCP Cloud Run deployment guide covering private trigger substitutions, service account hygiene, and public-safe project configuration.

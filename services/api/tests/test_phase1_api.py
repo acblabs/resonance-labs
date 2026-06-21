@@ -234,7 +234,34 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertEqual(payload["region"], "global")
         self.assertGreater(len(payload["explanation"]["observations"]), 0)
         self.assertGreater(len(payload["explanation"]["acoustic_hypotheses"]), 0)
+        self.assertGreater(len(payload["explanation"]["experiment_design"]), 0)
+        self.assertGreater(len(payload["explanation"]["physics_tutoring"]), 0)
+        self.assertGreater(len(payload["explanation"]["troubleshooting"]), 0)
+        self.assertGreater(len(payload["explanation"]["evidence_critique"]), 0)
         self.assertNotIn("series", json.dumps(payload["evidence"]))
+
+    def test_explain_troubleshoots_low_confidence_captures(self) -> None:
+        analysis = self._analyze_probe_payload()
+        analysis["alignment"]["confidence"] = 0.18
+        analysis["dsp"]["signal_to_noise_db"] = 8.0
+        analysis["dsp"]["decay"]["fit_r2"] = 0.2
+
+        with patch.dict(os.environ, {"RESONANCELAB_LLM_ENABLED": "false"}):
+            get_settings.cache_clear()
+            client = TestClient(create_app())
+            response = client.post(
+                "/api/v1/explain",
+                json={"analysis": analysis, "include_raw_audio": False},
+            )
+            get_settings.cache_clear()
+
+        self.assertEqual(response.status_code, 200)
+        explanation = response.json()["explanation"]
+        troubleshooting = " ".join(explanation["troubleshooting"])
+        critique = " ".join(explanation["evidence_critique"])
+        self.assertIn("Alignment is below the preferred threshold", troubleshooting)
+        self.assertIn("SNR is below the preferred threshold", troubleshooting)
+        self.assertIn("Weak alignment", critique)
 
     def test_explain_rejects_oversized_json_body_before_model_parsing(self) -> None:
         with patch.dict(os.environ, {"RESONANCELAB_MAX_EXPLAIN_BODY_BYTES": "64"}):

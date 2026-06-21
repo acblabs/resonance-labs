@@ -84,4 +84,4 @@ For each probe, extract and report:
 *   **Analytic Checks**: Maintain at least one closed-form damped-sinusoid regression test for peak frequency and exponential decay-rate recovery.
 *   **Real Fixtures**: Add small real room recordings only with metadata, tolerances, and clear caveats.
 *   **Report Fixtures**: Prefer reviewed JSON acoustic reports as public fixtures before committing raw audio; validate manifests for repeat, position, and room coverage. Compare repeat reports locally before using them for product claims.
-*   **LLM Boundary**: A lab-assistant model may explain compact structured DSP summaries, but raw WAV and full high-dimensional grids must not be sent to the hosted path by default.
+*   **LLM Boundary**: A lab-assistant model may explain compact structured DSP summaries, experiment design, physics tutoring, troubleshooting, and evidence critique, but raw WAV and full high-dimensional grids must not be sent to the hosted path by default.

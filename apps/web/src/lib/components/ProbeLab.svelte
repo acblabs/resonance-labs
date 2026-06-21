@@ -927,6 +927,38 @@
                   </ul>
                 </div>
                 <div>
+                  <h3>Experiment</h3>
+                  <ul>
+                    {#each explanation.explanation.experiment_design as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+                <div>
+                  <h3>Physics</h3>
+                  <ul>
+                    {#each explanation.explanation.physics_tutoring as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+                <div>
+                  <h3>Troubleshoot</h3>
+                  <ul>
+                    {#each explanation.explanation.troubleshooting as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+                <div>
+                  <h3>Critique</h3>
+                  <ul>
+                    {#each explanation.explanation.evidence_critique as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+                <div>
                   <h3>Next</h3>
                   <ul>
                     {#each explanation.explanation.next_measurement as item}

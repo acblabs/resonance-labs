@@ -23,7 +23,7 @@ Implemented:
 - Direct-path and room-response caveats for low SNR, weak alignment, unstable decay, direct/late response balance, high-Q peaks, and low-mode uncertainty.
 - Run-quality validation for alignment, SNR, duration, sample rate, peak amplitude, capture path, browser processing, and decay fit, with required checks weighted above advisory checks.
 - Exportable JSON and PNG acoustic reports from the Lab UI.
-- Deterministic `/api/v1/explain` fallback plus optional Gemini lab-assistant integration over compact structured DSP evidence only.
+- Deterministic `/api/v1/explain` fallback plus optional Gemini lab-assistant integration for observations, acoustic hypotheses, experiment design, physics tutoring, low-confidence troubleshooting, evidence critique, and next-measurement guidance over compact structured DSP evidence only.
 - Docker Compose for the web/API pair.
 - Cloud Build checks, image builds, and opt-in Cloud Run deployment.
 - Local Git hook checks for README, CHANGELOG, FEATURES, and project SKILL.md freshness.
@@ -88,7 +88,7 @@ See `FEATURES.md` for the current and planned feature list.
 
 The response includes upload/decode health, matched-filter alignment metadata, compact spectral grids, MFCC summaries, transfer-response bands, response traces, low-mode groups, dominant peaks, decay features, caveats, and warnings.
 
-`POST /api/v1/explain` accepts analysis JSON and `include_raw_audio=false`. It never accepts raw audio. By default it returns a deterministic DSP explanation; set `RESONANCELAB_LLM_ENABLED=true` on the API service to call Gemini through Vertex AI / Gemini Enterprise Agent Platform. The request body is capped by `RESONANCELAB_MAX_EXPLAIN_BODY_BYTES` and defaults to 512 KiB; Gemini output is capped by `RESONANCELAB_LLM_MAX_OUTPUT_TOKENS`, which defaults to 8192 so high-thinking calls have room to return compact JSON.
+`POST /api/v1/explain` accepts analysis JSON and `include_raw_audio=false`. It never accepts raw audio. By default it returns a deterministic DSP explanation with experiment design help, physics tutoring, low-confidence troubleshooting, and evidence critique; set `RESONANCELAB_LLM_ENABLED=true` on the API service to call Gemini through Vertex AI / Gemini Enterprise Agent Platform. The request body is capped by `RESONANCELAB_MAX_EXPLAIN_BODY_BYTES` and defaults to 512 KiB; Gemini output is capped by `RESONANCELAB_LLM_MAX_OUTPUT_TOKENS`, which defaults to 8192 so high-thinking calls have room to return compact JSON.
 
 ## Repository Layout
 

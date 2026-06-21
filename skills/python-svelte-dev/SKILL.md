@@ -47,7 +47,7 @@ For project context and repository layout details, refer to the root README, FEA
 *   **Local State**: Keep transient probe state in Svelte component state. Store durable derived reports only when the user explicitly asks for export.
 *   **Run Validation**: Surface alignment, SNR, duration, sample-rate, peak-amplitude, capture-path, browser-processing, decay-fit checks, and band-limited decay diagnostics as quality signals.
 *   **Download Robustness**: Defer object URL cleanup after report download clicks so large PNG exports are not cancelled by strict browsers.
-*   **LLM Explanation Boundary**: Explanations must call `/api/v1/explain` with compact analysis JSON only. Do not upload the WAV blob to an LLM provider. Keep hosted calls disabled by default and use Cloud Run service identity/IAM for Vertex Gemini instead of API keys.
+*   **LLM Explanation Boundary**: Explanations must call `/api/v1/explain` with compact analysis JSON only, including any experiment design, physics tutoring, troubleshooting, or evidence critique text. Do not upload the WAV blob to an LLM provider. Keep hosted calls disabled by default and use Cloud Run service identity/IAM for Vertex Gemini instead of API keys.
 *   **Acoustic Safety**: Cap the amplitude multiplier to `0.35` by default, keep chirps short, fade the signal, and keep the no-headphones warning visible.
 
 ---
