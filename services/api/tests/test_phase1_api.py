@@ -502,10 +502,12 @@ class Phase1ApiTests(unittest.TestCase):
 
     def test_explain_drops_ungrounded_gemini_claims(self) -> None:
         analysis = self._analyze_probe_payload()
+        generate_configs: list[dict] = []
 
         class FakeGenerateContentConfig:
             def __init__(self, **kwargs) -> None:
                 self.kwargs = kwargs
+                generate_configs.append(kwargs)
 
         class FakeThinkingConfig:
             def __init__(self, **kwargs) -> None:
@@ -593,6 +595,72 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertTrue(
             all(event["request_id"] == "llm-grounding-test" for event in ungrounded)
         )
+        self.assertEqual(generate_configs[0]["response_mime_type"], "application/json")
+        schema = generate_configs[0]["response_schema"]
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["properties"]["summary"]["type"], "string")
+        self.assertIn("summary_claim", schema["required"])
+
+    def test_explain_unwraps_single_object_gemini_array(self) -> None:
+        analysis = self._analyze_probe_payload()
+
+        class FakeGenerateContentConfig:
+            def __init__(self, **kwargs) -> None:
+                self.kwargs = kwargs
+
+        class FakeThinkingConfig:
+            def __init__(self, **kwargs) -> None:
+                self.kwargs = kwargs
+
+        class FakeThinkingLevel:
+            HIGH = "HIGH"
+
+        class FakeTypes:
+            GenerateContentConfig = FakeGenerateContentConfig
+            ThinkingConfig = FakeThinkingConfig
+            ThinkingLevel = FakeThinkingLevel
+
+        class FakeModels:
+            def generate_content(self, **kwargs):
+                payload = {
+                    "summary": "Array-wrapped Gemini summary.",
+                    "summary_claim": {
+                        "text": "Array-wrapped Gemini summary.",
+                        "evidence_refs": ["/quality/snr_db"],
+                    },
+                }
+                return SimpleNamespace(
+                    text=json.dumps([payload]),
+                    candidates=[SimpleNamespace(finish_reason="STOP")],
+                    usage_metadata=SimpleNamespace(total_token_count=64),
+                )
+
+        class FakeClient:
+            models = FakeModels()
+
+        with (
+            patch.dict(os.environ, {"RESONANCELAB_LLM_ENABLED": "true"}),
+            patch("app.services.explainer._vertex_client", return_value=(FakeClient(), FakeTypes)),
+            self.assertLogs("app.services.explainer", level="WARNING") as captured,
+        ):
+            get_settings.cache_clear()
+            client = TestClient(create_app())
+            response = client.post(
+                "/api/v1/explain",
+                headers={"X-Request-ID": "llm-array-test"},
+                json={"analysis": analysis, "include_raw_audio": False},
+            )
+            get_settings.cache_clear()
+
+        self.assertEqual(response.status_code, 200)
+        explanation = response.json()["explanation"]
+        self.assertEqual(explanation["summary"], "Array-wrapped Gemini summary.")
+        self.assertEqual(explanation["summary_claim"]["grounding_status"], "refs_resolved")
+        events = [json.loads(record.getMessage()) for record in captured.records]
+        unwrapped = next(
+            event for event in events if event["event"] == "llm_response_array_unwrapped"
+        )
+        self.assertEqual(unwrapped["request_id"], "llm-array-test")
 
     def test_explain_rejects_raw_audio_flag(self) -> None:
         analysis = self._analyze_probe_payload()

@@ -78,6 +78,7 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 - Explainability versioning for lab-assistant responses and acoustic reports.
 - Leaf JSON Pointer evidence refs and refs-resolved claim metadata alongside legacy explanation string arrays.
 - Ungrounded LLM claim rejection with deterministic fallback text and structured warning logs.
+- Schema-constrained Gemini response requests for grounded claim-object output.
 - Lab UI explanation panel for observations, acoustic hypotheses, experiment design assistance, physics tutoring, low-confidence troubleshooting, evidence critique, caveats, and next-measurement guidance.
 - Optional Gemini lab-assistant path using `gemini-3.1-pro-preview`, `global`, and `HIGH` thinking level through Cloud Run service identity.
 - Raw WAV files are excluded from the LLM explanation request path by schema and UI behavior.

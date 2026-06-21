@@ -46,12 +46,14 @@ Explain only from the supplied structured DSP evidence.
 Frame outputs as room acoustic fingerprints, not spatial maps or object identity claims.
 Do not claim medical, legal, safety, material, or geometry certainty.
 Do not ask for or infer from raw audio. The raw WAV is intentionally absent.
-Return compact JSON with keys: summary, observations, acoustic_hypotheses,
+Return exactly one compact JSON object, not an array, markdown block, string, or prose.
+Return the object with keys: summary, observations, acoustic_hypotheses,
 summary_claim, experiment_design, physics_tutoring, troubleshooting,
 evidence_critique, caveats, next_measurement, observation_claims,
 acoustic_hypothesis_claims,
 experiment_design_claims, physics_tutoring_claims, troubleshooting_claims,
 evidence_critique_claims, caveat_claims, next_measurement_claims.
+summary must be a string, not a list.
 Each legacy list should contain short strings. summary_claim and each *_claims
 list should contain objects with text and evidence_refs. evidence_refs must be
 leaf JSON Pointer paths from the supplied valid_evidence_refs list. Do not invent
@@ -664,6 +666,7 @@ def _generate_vertex_gemini_explanation(
                 temperature=settings.llm_temperature,
                 max_output_tokens=settings.llm_max_output_tokens,
                 response_mime_type="application/json",
+                response_schema=_llm_response_schema(),
                 thinking_config=types.ThinkingConfig(
                     thinking_level=_thinking_level(types, settings.llm_thinking_level),
                 ),
@@ -787,9 +790,80 @@ def _prompt_from_evidence(evidence: dict[str, Any]) -> str:
         "Explain this ResonanceLab probe result from structured evidence only. "
         "Separate measured observations, acoustic hypotheses, experiment design, "
         "physics tutoring, troubleshooting, evidence critique, and caveats. "
-        "Every claim object must cite only valid_evidence_refs.\n\n"
+        "Return one top-level object matching the configured schema; do not wrap "
+        "the object in a list. Every claim object must cite only "
+        "valid_evidence_refs.\n\n"
         f"{json.dumps(prompt_payload, sort_keys=True, separators=(',', ':'))}"
     )
+
+
+def _llm_response_schema() -> dict[str, Any]:
+    string_list = {
+        "type": "array",
+        "items": {"type": "string"},
+        "maxItems": 8,
+    }
+    claim = {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string"},
+            "evidence_refs": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "maxItems": 8,
+            },
+        },
+        "required": ["text", "evidence_refs"],
+    }
+    claim_list = {
+        "type": "array",
+        "items": claim,
+        "maxItems": 8,
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string"},
+            "summary_claim": claim,
+            "observations": string_list,
+            "observation_claims": claim_list,
+            "acoustic_hypotheses": string_list,
+            "acoustic_hypothesis_claims": claim_list,
+            "experiment_design": string_list,
+            "experiment_design_claims": claim_list,
+            "physics_tutoring": string_list,
+            "physics_tutoring_claims": claim_list,
+            "troubleshooting": string_list,
+            "troubleshooting_claims": claim_list,
+            "evidence_critique": string_list,
+            "evidence_critique_claims": claim_list,
+            "caveats": string_list,
+            "caveat_claims": claim_list,
+            "next_measurement": string_list,
+            "next_measurement_claims": claim_list,
+        },
+        "required": [
+            "summary",
+            "summary_claim",
+            "observations",
+            "observation_claims",
+            "acoustic_hypotheses",
+            "acoustic_hypothesis_claims",
+            "experiment_design",
+            "experiment_design_claims",
+            "physics_tutoring",
+            "physics_tutoring_claims",
+            "troubleshooting",
+            "troubleshooting_claims",
+            "evidence_critique",
+            "evidence_critique_claims",
+            "caveats",
+            "caveat_claims",
+            "next_measurement",
+            "next_measurement_claims",
+        ],
+    }
 
 
 def _thinking_level(types: Any, configured: str) -> Any:
@@ -857,13 +931,12 @@ def _duration_ms(started: float) -> float:
 
 
 def _coerce_explanation(
-    payload: dict[str, Any],
+    payload: Any,
     fallback: LlmExplanation,
     evidence: dict[str, Any],
     request_id: str | None,
 ) -> LlmExplanation:
-    if not isinstance(payload, dict):
-        payload = {}
+    payload = _normalize_llm_payload(payload, evidence, request_id)
     summary = fallback.summary
     summary_claim = fallback.summary_claim
     payload_summary_claim = payload.get("summary_claim")
@@ -949,6 +1022,34 @@ def _coerce_explanation(
         next_measurement=section_values["next_measurement"],
         next_measurement_claims=claim_values["next_measurement_claims"],
     )
+
+
+def _normalize_llm_payload(
+    payload: Any,
+    evidence: dict[str, Any],
+    request_id: str | None,
+) -> dict[str, Any]:
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, list) and len(payload) == 1 and isinstance(payload[0], dict):
+        log_event(
+            logger,
+            "llm_response_array_unwrapped",
+            level=logging.WARNING,
+            request_id=request_id,
+            analysis_id=evidence.get("analysis_id"),
+        )
+        return payload[0]
+    if payload:
+        log_event(
+            logger,
+            "llm_response_unexpected_shape",
+            level=logging.WARNING,
+            request_id=request_id,
+            analysis_id=evidence.get("analysis_id"),
+            payload_type=type(payload).__name__,
+        )
+    return {}
 
 
 def _resolved_claims_from_payload(

@@ -92,7 +92,7 @@ The response includes upload/decode health, matched-filter alignment metadata, c
 
 `POST /api/v1/explain` accepts analysis JSON and `include_raw_audio=false`. It never accepts raw audio. By default it returns a deterministic DSP explanation with experiment design help, physics tutoring, low-confidence troubleshooting, and evidence critique; set `RESONANCELAB_LLM_ENABLED=true` on the API service to call Gemini through Vertex AI / Gemini Enterprise Agent Platform. The request body is capped by `RESONANCELAB_MAX_EXPLAIN_BODY_BYTES` and defaults to 512 KiB; Gemini output is capped by `RESONANCELAB_LLM_MAX_OUTPUT_TOKENS`, which defaults to 8192 so high-thinking calls have room to return compact JSON.
 
-Explain responses include compatibility string arrays plus richer claim arrays with JSON Pointer evidence references. See `docs/explainability.md` for grounding rules and counterfactual semantics.
+Explain responses include compatibility string arrays plus richer claim arrays with JSON Pointer evidence references. Hosted Gemini calls request schema-constrained claim objects, and the API computes grounding metadata after resolving refs. See `docs/explainability.md` for grounding rules and counterfactual semantics.
 
 ## Repository Layout
 
