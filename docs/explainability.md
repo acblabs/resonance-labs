@@ -37,7 +37,7 @@ Each claim carries:
 
 Deterministic claims are constructed with known references and marked with `grounding_status="deterministic_rule"` when their refs resolve. LLM claims must cite valid leaf JSON Pointer refs; unresolvable claims or container refs are logged and dropped from the compatible string views in favor of deterministic fallback text. The server resolves authoritative values from the packet instead of trusting LLM-restated numbers.
 
-Hosted Gemini calls request schema-constrained JSON with a single top-level object and claim objects that contain only `text` plus `evidence_refs`; the API computes all grounding metadata after the response is received.
+Hosted Gemini calls request JSON with a single top-level object and claim objects that contain only `text` plus `evidence_refs`; the API computes all grounding metadata after the response is received.
 
 The `refs_resolved` flag means the cited evidence paths exist and point to leaf values. It does not claim semantic proof that free-form text matches those values.
 

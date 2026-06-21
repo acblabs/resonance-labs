@@ -69,7 +69,7 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Fixed
 
-- Gemini explanation calls now include an explicit JSON response schema and safely unwrap a single object returned inside a top-level array before grounding.
+- Gemini explanation calls now request a single top-level JSON object and safely unwrap a single object returned inside an array before grounding.
 - Empty Gemini explanation responses now include finish-reason and token-usage diagnostics.
 - Lab UI and report exports now share room-character and brightness descriptor thresholds instead of duplicating frontend logic.
 - LLM explanation requests now exclude raw WAV bytes and full high-dimensional signal grids from the hosted model path.

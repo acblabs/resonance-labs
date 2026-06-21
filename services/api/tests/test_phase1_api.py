@@ -596,10 +596,7 @@ class Phase1ApiTests(unittest.TestCase):
             all(event["request_id"] == "llm-grounding-test" for event in ungrounded)
         )
         self.assertEqual(generate_configs[0]["response_mime_type"], "application/json")
-        schema = generate_configs[0]["response_schema"]
-        self.assertEqual(schema["type"], "object")
-        self.assertEqual(schema["properties"]["summary"]["type"], "string")
-        self.assertIn("summary_claim", schema["required"])
+        self.assertNotIn("response_schema", generate_configs[0])
 
     def test_explain_unwraps_single_object_gemini_array(self) -> None:
         analysis = self._analyze_probe_payload()

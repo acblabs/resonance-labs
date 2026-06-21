@@ -666,7 +666,6 @@ def _generate_vertex_gemini_explanation(
                 temperature=settings.llm_temperature,
                 max_output_tokens=settings.llm_max_output_tokens,
                 response_mime_type="application/json",
-                response_schema=_llm_response_schema(),
                 thinking_config=types.ThinkingConfig(
                     thinking_level=_thinking_level(types, settings.llm_thinking_level),
                 ),
@@ -795,75 +794,6 @@ def _prompt_from_evidence(evidence: dict[str, Any]) -> str:
         "valid_evidence_refs.\n\n"
         f"{json.dumps(prompt_payload, sort_keys=True, separators=(',', ':'))}"
     )
-
-
-def _llm_response_schema() -> dict[str, Any]:
-    string_list = {
-        "type": "array",
-        "items": {"type": "string"},
-        "maxItems": 8,
-    }
-    claim = {
-        "type": "object",
-        "properties": {
-            "text": {"type": "string"},
-            "evidence_refs": {
-                "type": "array",
-                "items": {"type": "string"},
-                "minItems": 1,
-                "maxItems": 8,
-            },
-        },
-        "required": ["text", "evidence_refs"],
-    }
-    claim_list = {
-        "type": "array",
-        "items": claim,
-        "maxItems": 8,
-    }
-    return {
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string"},
-            "summary_claim": claim,
-            "observations": string_list,
-            "observation_claims": claim_list,
-            "acoustic_hypotheses": string_list,
-            "acoustic_hypothesis_claims": claim_list,
-            "experiment_design": string_list,
-            "experiment_design_claims": claim_list,
-            "physics_tutoring": string_list,
-            "physics_tutoring_claims": claim_list,
-            "troubleshooting": string_list,
-            "troubleshooting_claims": claim_list,
-            "evidence_critique": string_list,
-            "evidence_critique_claims": claim_list,
-            "caveats": string_list,
-            "caveat_claims": claim_list,
-            "next_measurement": string_list,
-            "next_measurement_claims": claim_list,
-        },
-        "required": [
-            "summary",
-            "summary_claim",
-            "observations",
-            "observation_claims",
-            "acoustic_hypotheses",
-            "acoustic_hypothesis_claims",
-            "experiment_design",
-            "experiment_design_claims",
-            "physics_tutoring",
-            "physics_tutoring_claims",
-            "troubleshooting",
-            "troubleshooting_claims",
-            "evidence_critique",
-            "evidence_critique_claims",
-            "caveats",
-            "caveat_claims",
-            "next_measurement",
-            "next_measurement_claims",
-        ],
-    }
 
 
 def _thinking_level(types: Any, configured: str) -> Any:
