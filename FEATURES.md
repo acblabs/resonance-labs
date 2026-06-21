@@ -21,6 +21,8 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 - Cloud Build configuration for GCP checks, container image builds, and opt-in Cloud Run deploys through private trigger substitutions.
 - Local Git hooks for README, CHANGELOG, FEATURES, and SKILL.md freshness checks.
 - Pre-commit enforcement that requires `FEATURES.md` to be updated in every commit.
+- Structured API logs with request IDs, request duration, analyze rejection reasons, analysis quality signals, LLM outcomes, and degradation markers.
+- Configurable `RESONANCELAB_LOG_LEVEL` for API logging verbosity.
 - Client-side probe safety clamping before chirp playback.
 - Cosine-tapered chirps to reduce broadband envelope clicks.
 - Batched AudioWorklet PCM capture to reduce allocation pressure.
@@ -81,6 +83,7 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 ## Current Cloud Deployment Features
 
 - Cloud Build defaults that run checks and image builds without deploying from PR/default triggers.
+- Cloud Build web validation runs Vitest unit tests before the production web build.
 - Main-trigger opt-in Cloud Run deployment through `_DEPLOY_TARGET=cloud-run`.
 - Artifact Registry push steps gated behind the deploy target.
 - Cloud Run API and web service deployment with configurable memory, CPU, concurrency, timeout, min-instance, and max-instance substitutions.

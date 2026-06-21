@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import ValidationError
 
+from app.observability import log_event
 from app.schemas import (
     AnalysisResponse,
     HealthResponse,
@@ -29,6 +31,7 @@ from app.settings import get_settings
 router = APIRouter()
 UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
 MULTIPART_OVERHEAD_BYTES = 64 * 1024
+logger = logging.getLogger(__name__)
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -95,7 +98,20 @@ async def analyze(
     settings = get_settings()
     _reject_large_content_length(request, settings.max_upload_bytes)
     parsed_metadata = _parse_metadata(metadata)
-    audio_bytes = await _read_upload_limited(audio, settings.max_upload_bytes)
+    try:
+        audio_bytes = await _read_upload_limited(audio, settings.max_upload_bytes)
+    except HTTPException as exc:
+        log_event(
+            logger,
+            "analyze_rejected",
+            level=logging.WARNING,
+            request_id=_request_id(request),
+            status_code=exc.status_code,
+            reason=exc.detail,
+            content_type=audio.content_type,
+            filename=audio.filename,
+        )
+        raise
 
     try:
         return analyze_probe_upload(
@@ -104,17 +120,39 @@ async def analyze(
             filename=audio.filename,
             metadata=parsed_metadata,
             settings=settings,
+            request_id=_request_id(request),
         )
     except AnalyzeUploadError as exc:
+        log_event(
+            logger,
+            "analyze_rejected",
+            level=logging.WARNING,
+            request_id=_request_id(request),
+            status_code=status.HTTP_400_BAD_REQUEST,
+            reason=str(exc),
+            content_type=audio.content_type,
+            filename=audio.filename,
+            capture_path=parsed_metadata.browser.capture_path,
+            client_recorded_at=parsed_metadata.client_recorded_at,
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/api/v1/explain", response_model=LlmExplainResponse)
-async def explain(request: LlmExplainRequest) -> LlmExplainResponse:
+async def explain(request: Request, payload: LlmExplainRequest) -> LlmExplainResponse:
     settings = get_settings()
     try:
-        return explain_probe_result(request, settings)
+        return explain_probe_result(payload, settings, request_id=_request_id(request))
     except LlmExplanationError as exc:
+        log_event(
+            logger,
+            "explain_rejected",
+            level=logging.WARNING,
+            request_id=_request_id(request),
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            analysis_id=payload.analysis.analysis_id,
+            reason=str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
@@ -147,9 +185,26 @@ def _reject_large_content_length(request: Request, max_upload_bytes: int) -> Non
     try:
         content_length = int(raw_content_length)
     except ValueError:
+        log_event(
+            logger,
+            "invalid_content_length_header",
+            level=logging.WARNING,
+            request_id=_request_id(request),
+            raw_content_length=raw_content_length,
+        )
         return
 
     if content_length > max_upload_bytes + MULTIPART_OVERHEAD_BYTES:
+        log_event(
+            logger,
+            "analyze_rejected",
+            level=logging.WARNING,
+            request_id=_request_id(request),
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            reason="Request body exceeds the upload limit.",
+            content_length=content_length,
+            max_upload_bytes=max_upload_bytes,
+        )
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="Request body exceeds the upload limit.",
@@ -174,3 +229,7 @@ async def _read_upload_limited(audio: UploadFile, max_upload_bytes: int) -> byte
         chunks.append(chunk)
 
     return b"".join(chunks)
+
+
+def _request_id(request: Request) -> str | None:
+    return getattr(request.state, "request_id", None)

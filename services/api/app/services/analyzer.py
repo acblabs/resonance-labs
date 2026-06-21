@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from uuid import uuid4
 
@@ -15,6 +16,7 @@ from resonancelab.dsp import (
     compute_audio_metrics,
 )
 
+from app.observability import log_event
 from app.schemas import (
     AlignmentMetadata,
     AnalysisResponse,
@@ -36,6 +38,8 @@ from app.schemas import (
 )
 from app.settings import Settings
 
+logger = logging.getLogger(__name__)
+
 
 class AnalyzeUploadError(ValueError):
     """Raised when an uploaded probe cannot be accepted for analysis."""
@@ -48,6 +52,7 @@ def analyze_probe_upload(
     filename: str | None,
     metadata: ProbeMetadata,
     settings: Settings,
+    request_id: str | None = None,
 ) -> AnalysisResponse:
     """Validate and summarize an uploaded WAV probe recording."""
 
@@ -93,9 +98,24 @@ def analyze_probe_upload(
         duration_seconds=metrics.duration_seconds,
         dsp_analysis=dsp_analysis,
     )
+    analysis_id = uuid4()
+    degradation_reasons = _dsp_degradation_reasons(dsp_analysis)
+    _log_analysis_outcome(
+        analysis_id=analysis_id,
+        request_id=request_id,
+        byte_count=byte_count,
+        normalized_content_type=normalized_content_type,
+        filename=filename,
+        sample_rate_hz=decoded.sample_rate_hz,
+        metadata=metadata,
+        metrics=metrics,
+        dsp_analysis=dsp_analysis,
+        warnings=warnings,
+        degradation_reasons=degradation_reasons,
+    )
 
     return AnalysisResponse(
-        analysis_id=uuid4(),
+        analysis_id=analysis_id,
         status="ok",
         audio=AudioUploadMetrics(
             content_type=normalized_content_type,
@@ -123,6 +143,85 @@ def analyze_probe_upload(
         dsp=_dsp_response(dsp_analysis),
         warnings=warnings,
     )
+
+
+def _log_analysis_outcome(
+    *,
+    analysis_id,
+    request_id: str | None,
+    byte_count: int,
+    normalized_content_type: str,
+    filename: str | None,
+    sample_rate_hz: int,
+    metadata: ProbeMetadata,
+    metrics,
+    dsp_analysis: ChirpDspAnalysis,
+    warnings: list[str],
+    degradation_reasons: list[str],
+) -> None:
+    fields = {
+        "request_id": request_id,
+        "analysis_id": analysis_id,
+        "content_type": normalized_content_type,
+        "filename": filename,
+        "byte_count": byte_count,
+        "sample_rate_hz": sample_rate_hz,
+        "duration_seconds": round(metrics.duration_seconds, 4),
+        "rms": round(metrics.rms, 8),
+        "peak_amplitude": round(metrics.peak_amplitude, 6),
+        "capture_path": metadata.browser.capture_path,
+        "client_recorded_at": metadata.client_recorded_at,
+        "alignment_confidence": round(dsp_analysis.alignment.confidence, 4),
+        "snr_db": (
+            None
+            if dsp_analysis.signal_to_noise_db is None
+            else round(dsp_analysis.signal_to_noise_db, 2)
+        ),
+        "warning_count": len(warnings),
+        "response_caveat_count": len(dsp_analysis.response_caveats),
+        "dominant_peak_count": len(dsp_analysis.dominant_peaks),
+        "mode_group_count": len(dsp_analysis.mode_groups),
+        "degradation_reasons": degradation_reasons,
+    }
+    log_event(logger, "analysis_completed", **fields)
+    if degradation_reasons:
+        log_event(
+            logger,
+            "analysis_degraded",
+            level=logging.WARNING,
+            **fields,
+        )
+
+
+def _dsp_degradation_reasons(analysis: ChirpDspAnalysis) -> list[str]:
+    reasons: list[str] = []
+    if analysis.alignment.confidence < ALIGNMENT_WARN_CONFIDENCE:
+        reasons.append("low_alignment_confidence")
+    if analysis.signal_to_noise_db is None:
+        reasons.append("snr_unavailable")
+    elif analysis.signal_to_noise_db < SNR_WARN_DB:
+        reasons.append("low_snr")
+    if not analysis.dominant_peaks:
+        reasons.append("no_dominant_peaks")
+    if not analysis.impulse_response.times_seconds:
+        reasons.append("deconvolved_response_unavailable")
+    elif analysis.impulse_response.direct_to_late_db is None:
+        reasons.append("deconvolved_direct_late_unavailable")
+    if not analysis.matched_response.times_seconds:
+        reasons.append("matched_response_unavailable")
+    elif analysis.matched_response.direct_to_late_db is None:
+        reasons.append("matched_direct_late_unavailable")
+    if analysis.decay.rt60_seconds is None:
+        reasons.append("decay_unavailable")
+    if not analysis.decay_bands:
+        reasons.append("decay_bands_unavailable")
+    else:
+        missing_band_labels = [
+            band.label for band in analysis.decay_bands if band.rt60_seconds is None
+        ]
+        if missing_band_labels:
+            reasons.append("decay_band_unavailable:" + ",".join(missing_band_labels))
+    return reasons
 
 
 def _build_warnings(

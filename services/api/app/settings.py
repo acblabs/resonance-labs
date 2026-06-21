@@ -34,6 +34,9 @@ class Settings:
     )
     version: str = field(default_factory=lambda: os.getenv("RESONANCELAB_VERSION", "0.1.0"))
     environment: str = field(default_factory=lambda: os.getenv("RESONANCELAB_ENV", "local"))
+    log_level: str = field(
+        default_factory=lambda: os.getenv("RESONANCELAB_LOG_LEVEL", "INFO").strip().upper()
+    )
     cors_origins: tuple[str, ...] = field(
         default_factory=lambda: _csv_env(
             "RESONANCELAB_CORS_ORIGINS",

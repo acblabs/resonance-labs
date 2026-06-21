@@ -60,6 +60,7 @@ For project context and repository layout details, refer to the root README, FEA
 *   `packages/resonancelab/`: Core audio and DSP helpers.
 *   Keep API routes light; reusable DSP belongs in packages so tests and future reports can call it directly.
 *   Use Pydantic v2 schemas for request/response validation and explicit upload limits.
+*   Emit structured API logs with request IDs, analysis IDs, quality signals, rejection reasons, and LLM outcomes; avoid logging raw audio or high-dimensional signal grids.
 
 ### 2.2 Performance & Memory Guardrails
 
@@ -74,6 +75,7 @@ For project context and repository layout details, refer to the root README, FEA
 *   **Frontend Test Patterns**: Test chirp generation, WAV encoding, audio state transitions, and rendering helpers with mocked browser APIs.
 *   **Golden Audio Fixtures**: Preserve deterministic generated fixtures and add small real room fixtures with tolerant assertions when available. Prefer reviewed JSON report fixtures and local comparison before publishing.
 *   **API Tests**: Keep `/api/v1/analyze` and `/api/v1/explain` schema tests grounded in compact DSP evidence.
+*   **CI Coverage**: Cloud Build should run Python checks, Svelte checks, Vitest unit tests, and production web builds before deployment.
 
 ---
 

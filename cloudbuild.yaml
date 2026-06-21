@@ -55,6 +55,7 @@ steps:
       - |
         npm ci
         npm --workspace @resonancelab/web run check
+        npm --workspace @resonancelab/web run test
         npm --workspace @resonancelab/web run build
 
   - id: build-api-image

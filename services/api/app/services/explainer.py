@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from functools import lru_cache
 from typing import Any
 
+from app.observability import log_event
 from app.schemas import LlmExplainRequest, LlmExplainResponse, LlmExplanation
 from app.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class LlmExplanationError(RuntimeError):
@@ -28,6 +33,7 @@ Each list should contain short, evidence-grounded strings."""
 def explain_probe_result(
     request: LlmExplainRequest,
     settings: Settings,
+    request_id: str | None = None,
 ) -> LlmExplainResponse:
     """Return a grounded explanation from compact analysis evidence."""
 
@@ -36,6 +42,16 @@ def explain_probe_result(
     warnings = list(evidence.get("warnings", []))
 
     if not settings.llm_enabled:
+        log_event(
+            logger,
+            "llm_explain_completed",
+            request_id=request_id,
+            analysis_id=request.analysis.analysis_id,
+            status="disabled",
+            provider="vertex_gemini",
+            model=settings.llm_model,
+            region=settings.llm_location,
+        )
         return LlmExplainResponse(
             status="disabled",
             provider="vertex_gemini",
@@ -60,6 +76,7 @@ def explain_probe_result(
         evidence=evidence,
         settings=settings,
         fallback=deterministic,
+        request_id=request_id,
     )
     return LlmExplainResponse(
         status="ok",
@@ -499,7 +516,9 @@ def _generate_vertex_gemini_explanation(
     evidence: dict[str, Any],
     settings: Settings,
     fallback: LlmExplanation,
+    request_id: str | None,
 ) -> LlmExplanation:
+    started = time.perf_counter()
     try:
         client, types = _vertex_client(settings.llm_project_id, settings.llm_location)
         response = client.models.generate_content(
@@ -516,14 +535,55 @@ def _generate_vertex_gemini_explanation(
             ),
         )
     except Exception as exc:  # pragma: no cover - exercised only with live Vertex credentials.
+        log_event(
+            logger,
+            "llm_request_failed",
+            level=logging.ERROR,
+            request_id=request_id,
+            analysis_id=evidence.get("analysis_id"),
+            provider="vertex_gemini",
+            model=settings.llm_model,
+            region=settings.llm_location,
+            duration_ms=_duration_ms(started),
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
         raise LlmExplanationError(f"Gemini explanation request failed: {exc}") from exc
 
     text = (getattr(response, "text", "") or "").strip()
     if not text:
+        finish_reasons = _candidate_finish_reasons(response)
+        log_event(
+            logger,
+            "llm_response_empty",
+            level=logging.WARNING,
+            request_id=request_id,
+            analysis_id=evidence.get("analysis_id"),
+            provider="vertex_gemini",
+            model=settings.llm_model,
+            region=settings.llm_location,
+            duration_ms=_duration_ms(started),
+            finish_reasons=finish_reasons,
+            usage=_usage_summary(response),
+        )
         raise LlmExplanationError(_empty_gemini_response_message(response, settings))
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
+        log_event(
+            logger,
+            "llm_response_non_json",
+            level=logging.WARNING,
+            request_id=request_id,
+            analysis_id=evidence.get("analysis_id"),
+            provider="vertex_gemini",
+            model=settings.llm_model,
+            region=settings.llm_location,
+            duration_ms=_duration_ms(started),
+            finish_reasons=_candidate_finish_reasons(response),
+            usage=_usage_summary(response),
+            response_preview=text[:160],
+        )
         payload = {
             "summary": text,
             "observations": fallback.observations,
@@ -535,7 +595,36 @@ def _generate_vertex_gemini_explanation(
             "caveats": fallback.caveats,
             "next_measurement": fallback.next_measurement,
         }
-    return _coerce_explanation(payload, fallback)
+        generated = _coerce_explanation(payload, fallback)
+        log_event(
+            logger,
+            "llm_explain_completed",
+            request_id=request_id,
+            analysis_id=evidence.get("analysis_id"),
+            status="ok_non_json_fallback",
+            provider="vertex_gemini",
+            model=settings.llm_model,
+            region=settings.llm_location,
+            duration_ms=_duration_ms(started),
+            usage=_usage_summary(response),
+        )
+        return generated
+
+    generated = _coerce_explanation(payload, fallback)
+    log_event(
+        logger,
+        "llm_explain_completed",
+        request_id=request_id,
+        analysis_id=evidence.get("analysis_id"),
+        status="ok",
+        provider="vertex_gemini",
+        model=settings.llm_model,
+        region=settings.llm_location,
+        duration_ms=_duration_ms(started),
+        finish_reasons=_candidate_finish_reasons(response),
+        usage=_usage_summary(response),
+    )
+    return generated
 
 
 @lru_cache(maxsize=4)
@@ -621,6 +710,10 @@ def _usage_summary(response: Any) -> str | None:
         if value is not None:
             parts.append(f"{key}={value}")
     return ",".join(parts) or None
+
+
+def _duration_ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000.0, 2)
 
 
 def _coerce_explanation(payload: dict[str, Any], fallback: LlmExplanation) -> LlmExplanation:

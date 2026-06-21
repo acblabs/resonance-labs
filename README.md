@@ -131,6 +131,7 @@ python -m pytest
 python scripts/check_project_docs.py --all
 python scripts/validate_real_room_fixtures.py data/real_room_fixtures/manifest.example.json --allow-missing
 npm.cmd --workspace @resonancelab/web run check
+npm.cmd --workspace @resonancelab/web run test
 npm.cmd --workspace @resonancelab/web run build
 ```
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -10,6 +11,9 @@ try:
     import numpy as np
 except ModuleNotFoundError:  # pragma: no cover - exercised only before local deps are installed.
     np = None
+
+logger = logging.getLogger(__name__)
+_warned_numpy_fallback = False
 
 
 @dataclass(frozen=True)
@@ -45,6 +49,11 @@ def compute_audio_metrics(samples: Sequence[float], sample_rate_hz: int) -> Audi
             dc_offset=float(np.mean(array)),
             sample_count=sample_count,
         )
+
+    global _warned_numpy_fallback
+    if not _warned_numpy_fallback:
+        logger.warning("numpy_unavailable_audio_metrics_fallback")
+        _warned_numpy_fallback = True
 
     total = 0.0
     total_squares = 0.0

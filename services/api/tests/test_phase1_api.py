@@ -92,6 +92,11 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
 
+    def test_request_id_header_is_returned(self) -> None:
+        response = self.client.get("/health", headers={"X-Request-ID": "trace-test-123"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["x-request-id"], "trace-test-123")
+
     def test_probe_config_contains_default_chirp(self) -> None:
         response = self.client.get("/api/v1/probe-config")
         self.assertEqual(response.status_code, 200)
@@ -169,6 +174,43 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertIn("mode_groups", payload["dsp"])
         self.assertIn("response_caveats", payload["dsp"])
         self.assertGreater(len(payload["dsp"]["decay_bands"]), 0)
+
+    def test_analyze_logs_analysis_id_and_quality_signals(self) -> None:
+        metadata = _probe_metadata()
+        with self.assertLogs("app.services.analyzer", level="INFO") as captured:
+            response = self.client.post(
+                "/api/v1/analyze",
+                headers={"X-Request-ID": "analysis-log-test"},
+                files={"audio": ("probe.wav", make_probe_wav(), "audio/wav")},
+                data={"metadata": json.dumps(metadata)},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        events = [json.loads(record.getMessage()) for record in captured.records]
+        completed = next(event for event in events if event["event"] == "analysis_completed")
+        self.assertEqual(completed["request_id"], "analysis-log-test")
+        self.assertEqual(completed["analysis_id"], payload["analysis_id"])
+        self.assertEqual(completed["sample_rate_hz"], 48000)
+        self.assertEqual(completed["capture_path"], "audio_worklet")
+        self.assertIn("alignment_confidence", completed)
+        self.assertIn("warning_count", completed)
+
+    def test_analyze_logs_upload_rejection_reason(self) -> None:
+        with self.assertLogs("app.api.routes", level="WARNING") as captured:
+            response = self.client.post(
+                "/api/v1/analyze",
+                headers={"X-Request-ID": "reject-log-test"},
+                files={"audio": ("probe.mp3", b"not-wav", "audio/mpeg")},
+                data={"metadata": json.dumps(_probe_metadata())},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        events = [json.loads(record.getMessage()) for record in captured.records]
+        rejected = next(event for event in events if event["event"] == "analyze_rejected")
+        self.assertEqual(rejected["request_id"], "reject-log-test")
+        self.assertEqual(rejected["content_type"], "audio/mpeg")
+        self.assertIn("Unsupported content type", rejected["reason"])
 
     def test_analyze_rejects_probe_above_wav_nyquist(self) -> None:
         metadata = _probe_metadata()
@@ -333,6 +375,59 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertIn("finish_reasons=MAX_TOKENS", detail)
         self.assertIn("max_output_tokens=64", detail)
         self.assertIn("RESONANCELAB_LLM_MAX_OUTPUT_TOKENS", detail)
+
+    def test_explain_logs_non_json_gemini_fallback(self) -> None:
+        analysis = self._analyze_probe_payload()
+
+        class FakeGenerateContentConfig:
+            def __init__(self, **kwargs) -> None:
+                self.kwargs = kwargs
+
+        class FakeThinkingConfig:
+            def __init__(self, **kwargs) -> None:
+                self.kwargs = kwargs
+
+        class FakeThinkingLevel:
+            HIGH = "HIGH"
+
+        class FakeTypes:
+            GenerateContentConfig = FakeGenerateContentConfig
+            ThinkingConfig = FakeThinkingConfig
+            ThinkingLevel = FakeThinkingLevel
+
+        class FakeModels:
+            def generate_content(self, **kwargs):
+                return SimpleNamespace(
+                    text="Plain-language fallback summary.",
+                    candidates=[SimpleNamespace(finish_reason="STOP")],
+                    usage_metadata=SimpleNamespace(total_token_count=42),
+                )
+
+        class FakeClient:
+            models = FakeModels()
+
+        with (
+            patch.dict(os.environ, {"RESONANCELAB_LLM_ENABLED": "true"}),
+            patch("app.services.explainer._vertex_client", return_value=(FakeClient(), FakeTypes)),
+            self.assertLogs("app.services.explainer", level="WARNING") as captured,
+        ):
+            get_settings.cache_clear()
+            client = TestClient(create_app())
+            response = client.post(
+                "/api/v1/explain",
+                headers={"X-Request-ID": "llm-non-json-test"},
+                json={"analysis": analysis, "include_raw_audio": False},
+            )
+            get_settings.cache_clear()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["explanation"]["summary"], "Plain-language fallback summary.")
+        events = [json.loads(record.getMessage()) for record in captured.records]
+        non_json = next(event for event in events if event["event"] == "llm_response_non_json")
+        self.assertEqual(non_json["request_id"], "llm-non-json-test")
+        self.assertEqual(non_json["analysis_id"], analysis["analysis_id"])
 
     def test_explain_rejects_raw_audio_flag(self) -> None:
         analysis = self._analyze_probe_payload()

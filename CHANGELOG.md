@@ -26,6 +26,7 @@ All notable changes to ResonanceLab will be documented in this file.
 - Lab UI explanation panel for observations, acoustic hypotheses, experiment design assistance, physics tutoring, low-confidence troubleshooting, evidence critique, caveats, and next-measurement guidance.
 - Cloud Run deployment path in Cloud Build, gated by `_DEPLOY_TARGET=cloud-run` so default and PR builds do not deploy.
 - Cloud Run API and web deploys now explicitly use the second-generation execution environment with startup CPU boost enabled.
+- Structured API observability logs now include request IDs, request timing, analyze rejection reasons, analysis quality signals, LLM outcomes, and degradation markers.
 - GCP Cloud Run deployment guide covering private trigger substitutions, service account hygiene, and public-safe project configuration.
 - `.gcloudignore` coverage for local GCP notes, service account key files, private datasets, and generated artifacts.
 - Analytic damped-sinusoid DSP regression coverage for independent peak and decay-rate checks.
@@ -60,6 +61,7 @@ All notable changes to ResonanceLab will be documented in this file.
 - API dummy metrics now report `dc_offset` instead of misleading signed mean amplitude.
 - Web builds now use runtime `PUBLIC_API_URL` instead of an inert build argument.
 - Cloud Build and local API scripts now run `python -m ruff check .` and `python -m pytest`.
+- Cloud Build web checks now run the existing Vitest unit tests before building the SvelteKit app.
 
 ### Fixed
 
