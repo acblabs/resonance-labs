@@ -193,19 +193,39 @@ export type AnalysisResponse = {
   warnings: string[];
 };
 
+export type ExplanationClaim = {
+  text: string;
+  evidence_refs: string[];
+  refs_resolved: boolean;
+  grounding_status: "deterministic_rule" | "refs_resolved" | "unverified";
+  grounding_reason: string | null;
+  authoritative_values: Record<string, unknown>;
+};
+
 export type LlmExplanation = {
+  explainability_version: number;
   summary: string;
+  summary_claim?: ExplanationClaim | null;
   observations: string[];
+  observation_claims?: ExplanationClaim[];
   acoustic_hypotheses: string[];
+  acoustic_hypothesis_claims?: ExplanationClaim[];
   experiment_design: string[];
+  experiment_design_claims?: ExplanationClaim[];
   physics_tutoring: string[];
+  physics_tutoring_claims?: ExplanationClaim[];
   troubleshooting: string[];
+  troubleshooting_claims?: ExplanationClaim[];
   evidence_critique: string[];
+  evidence_critique_claims?: ExplanationClaim[];
   caveats: string[];
+  caveat_claims?: ExplanationClaim[];
   next_measurement: string[];
+  next_measurement_claims?: ExplanationClaim[];
 };
 
 export type LlmExplainResponse = {
+  explainability_version: number;
   status: "ok" | "disabled";
   provider: "vertex_gemini";
   model: string;

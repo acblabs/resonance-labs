@@ -13,6 +13,8 @@ export type ValidationCheck = {
   value: string;
   target: string;
   detail: string;
+  margin_to_pass: string | null;
+  counterfactual: string | null;
   required: boolean;
   weight: number;
 };
@@ -28,7 +30,9 @@ export type DeviceValidationSummary = {
 
 export type AcousticReportDescriptor = {
   room_character: string;
+  room_character_counterfactual: string | null;
   brightness: string;
+  brightness_counterfactual: string | null;
   dominant_mode: string;
   dominant_mode_hz: number | null;
   dominant_mode_q: number | null;
@@ -37,6 +41,7 @@ export type AcousticReportDescriptor = {
 
 export type AcousticReport = {
   schema_version: "resonancelab.acoustic_report.v1";
+  explainability_version: 1;
   generated_at: string;
   analysis_id: string;
   title: string;
@@ -78,6 +83,10 @@ const MISSING = "--";
 const VERY_HIGH_Q_THRESHOLD = 300;
 const REQUIRED_CHECK_WEIGHT = 2;
 const ADVISORY_CHECK_WEIGHT = 1;
+const DRY_RT60_SECONDS = 0.25;
+const LIVE_RT60_SECONDS = 0.75;
+const DARK_CENTROID_HZ = 1200;
+const BRIGHT_CENTROID_HZ = 3500;
 
 export function buildAcousticReport(
   analysis: AnalysisResponse,
@@ -86,6 +95,7 @@ export function buildAcousticReport(
 ): AcousticReport {
   return {
     schema_version: "resonancelab.acoustic_report.v1",
+    explainability_version: 1,
     generated_at: generatedAt.toISOString(),
     analysis_id: analysis.analysis_id,
     title: "ResonanceLab Room Acoustic Fingerprint",
@@ -257,15 +267,87 @@ export function buildDescriptors(
   analysis: AnalysisResponse,
 ): AcousticReportDescriptor {
   const topPeak = analysis.dsp.dominant_peaks[0] ?? null;
+  const room = describeRoomCharacter(analysis.dsp.decay.rt60_seconds);
+  const spectralBrightness = describeBrightness(analysis.dsp.fft.centroid_hz);
   return {
-    room_character: roomCharacter(analysis.dsp.decay.rt60_seconds),
-    brightness: brightness(analysis.dsp.fft.centroid_hz),
+    room_character: room.label,
+    room_character_counterfactual: room.counterfactual,
+    brightness: spectralBrightness.label,
+    brightness_counterfactual: spectralBrightness.counterfactual,
     dominant_mode: topPeak
       ? `${formatHz(topPeak.frequency_hz)}${topPeak.q_factor === null ? "" : `, ${formatQ(topPeak.q_factor)}`}`
       : MISSING,
     dominant_mode_hz: topPeak?.frequency_hz ?? null,
     dominant_mode_q: topPeak?.q_factor ?? null,
     dominant_mode_note: topPeak ? highQNote(topPeak.q_factor) : null,
+  };
+}
+
+export function describeRoomCharacter(rt60Seconds: number | null): {
+  label: string;
+  counterfactual: string | null;
+} {
+  if (rt60Seconds === null || !Number.isFinite(rt60Seconds)) {
+    return {
+      label: MISSING,
+      counterfactual:
+        "A stable RT60 proxy is required before room character can be labeled.",
+    };
+  }
+  if (rt60Seconds < DRY_RT60_SECONDS) {
+    return {
+      label: "Dry",
+      counterfactual: `Balanced at ${formatSeconds(DRY_RT60_SECONDS)} or above; current margin ${formatSeconds(DRY_RT60_SECONDS - rt60Seconds)}.`,
+    };
+  }
+  if (rt60Seconds > LIVE_RT60_SECONDS) {
+    return {
+      label: "Live",
+      counterfactual: `Balanced at ${formatSeconds(LIVE_RT60_SECONDS)} or below; current margin ${formatSeconds(rt60Seconds - LIVE_RT60_SECONDS)}.`,
+    };
+  }
+  const dryMargin = rt60Seconds - DRY_RT60_SECONDS;
+  const liveMargin = LIVE_RT60_SECONDS - rt60Seconds;
+  return {
+    label: "Balanced",
+    counterfactual:
+      dryMargin <= liveMargin
+        ? `Dry below ${formatSeconds(DRY_RT60_SECONDS)}; margin ${formatSeconds(dryMargin)}.`
+        : `Live above ${formatSeconds(LIVE_RT60_SECONDS)}; margin ${formatSeconds(liveMargin)}.`,
+  };
+}
+
+export function describeBrightness(centroidHz: number | null): {
+  label: string;
+  counterfactual: string | null;
+} {
+  if (centroidHz === null || !Number.isFinite(centroidHz)) {
+    return {
+      label: MISSING,
+      counterfactual:
+        "A finite spectral centroid is required before brightness can be labeled.",
+    };
+  }
+  if (centroidHz > BRIGHT_CENTROID_HZ) {
+    return {
+      label: "Bright",
+      counterfactual: `Neutral at ${formatHz(BRIGHT_CENTROID_HZ)} or below; current margin ${formatHz(centroidHz - BRIGHT_CENTROID_HZ)}.`,
+    };
+  }
+  if (centroidHz < DARK_CENTROID_HZ) {
+    return {
+      label: "Dark",
+      counterfactual: `Neutral at ${formatHz(DARK_CENTROID_HZ)} or above; current margin ${formatHz(DARK_CENTROID_HZ - centroidHz)}.`,
+    };
+  }
+  const darkMargin = centroidHz - DARK_CENTROID_HZ;
+  const brightMargin = BRIGHT_CENTROID_HZ - centroidHz;
+  return {
+    label: "Neutral",
+    counterfactual:
+      darkMargin <= brightMargin
+        ? `Dark below ${formatHz(DARK_CENTROID_HZ)}; margin ${formatHz(darkMargin)}.`
+        : `Bright above ${formatHz(BRIGHT_CENTROID_HZ)}; margin ${formatHz(brightMargin)}.`,
   };
 }
 
@@ -566,17 +648,25 @@ function drawDecayBandsPanel(
 
   const bands = report.analysis.dsp.decay_bands ?? [];
   if (!bands.length) {
-    drawEmpty(context, "No band-limited decay available.", panel.x + 24, panel.y + 74);
+    drawEmpty(
+      context,
+      "No band-limited decay available.",
+      panel.x + 24,
+      panel.y + 74,
+    );
     return;
   }
   const rt60Values = bands
     .map((band) => band.rt60_seconds)
-    .filter((value): value is number => value !== null && Number.isFinite(value));
+    .filter(
+      (value): value is number => value !== null && Number.isFinite(value),
+    );
   const maxRt60 = Math.max(...rt60Values, 0.1);
   bands.forEach((band, index) => {
     const y = panel.y + 70 + index * 32;
     const rt60 = band.rt60_seconds;
-    const normalized = rt60 === null ? 0 : Math.max(0.04, Math.min(1, rt60 / maxRt60));
+    const normalized =
+      rt60 === null ? 0 : Math.max(0.04, Math.min(1, rt60 / maxRt60));
     context.fillStyle = "#9fb0aa";
     context.font = "700 13px Inter, Segoe UI, sans-serif";
     context.fillText(
@@ -685,7 +775,7 @@ function drawValidationPanel(
     context.font = "600 13px Inter, Segoe UI, sans-serif";
     drawWrappedText(
       context,
-      `${check.value} | ${check.target}`,
+      `${check.value} | ${check.counterfactual ?? check.target}`,
       x + 24,
       y + 21,
       390,
@@ -821,8 +911,7 @@ function drawLineTrace(
   finitePairs.forEach((pair, index) => {
     const pointX = x + normalize(pair.xValue, minX, maxX) * width;
     const pointY =
-      y +
-      (1 - normalize(pair.yValue, options.minY, options.maxY)) * height;
+      y + (1 - normalize(pair.yValue, options.minY, options.maxY)) * height;
     if (index === 0) {
       context.moveTo(pointX, pointY);
     } else {
@@ -908,10 +997,7 @@ function compareTransferBands(
     .filter((value): value is TransferBandComparison => value !== null);
 }
 
-function transferBandKey(band: {
-  start_hz: number;
-  end_hz: number;
-}): string {
+function transferBandKey(band: { start_hz: number; end_hz: number }): string {
   return `${Math.round(band.start_hz)}-${Math.round(band.end_hz)}`;
 }
 
@@ -925,10 +1011,14 @@ function comparisonCaveats(
   if (
     first.analysis.audio.sample_rate_hz !== second.analysis.audio.sample_rate_hz
   ) {
-    caveats.push("Sample rates differ; compare spectral and decay values cautiously.");
+    caveats.push(
+      "Sample rates differ; compare spectral and decay values cautiously.",
+    );
   }
   if (firstProbe.browser.capture_path !== secondProbe.browser.capture_path) {
-    caveats.push("Capture paths differ; AudioWorklet and fallback paths can shape results.");
+    caveats.push(
+      "Capture paths differ; AudioWorklet and fallback paths can shape results.",
+    );
   }
   if (
     firstProbe.browser.user_agent &&
@@ -940,7 +1030,9 @@ function comparisonCaveats(
   const firstConfig = JSON.stringify(firstProbe.probe_config);
   const secondConfig = JSON.stringify(secondProbe.probe_config);
   if (firstConfig !== secondConfig) {
-    caveats.push("Probe configuration differs; repeatability comparisons need matching chirps.");
+    caveats.push(
+      "Probe configuration differs; repeatability comparisons need matching chirps.",
+    );
   }
   return caveats;
 }
@@ -978,12 +1070,15 @@ function statusAtLeast({
       value: MISSING,
       target,
       detail: `${label} was not available.`,
+      margin_to_pass: null,
+      counterfactual: `${label} must be available and reach ${formatThreshold(passAt, precision, unit)} to pass.`,
       required,
       weight: checkWeight(required),
     };
   }
   const status =
     value >= passAt ? "pass" : value >= reviewAt ? "review" : "fail";
+  const margin = passAt - value;
   return {
     id,
     label,
@@ -991,6 +1086,12 @@ function statusAtLeast({
     value: `${value.toFixed(precision)}${unit}`,
     target,
     detail: `${label} measured ${value.toFixed(precision)}${unit}.`,
+    margin_to_pass:
+      status === "pass" ? null : formatThreshold(margin, precision, unit),
+    counterfactual:
+      status === "pass"
+        ? null
+        : `${label} ${formatThreshold(value, precision, unit)}; +${formatThreshold(margin, precision, unit)} reaches preferred.`,
     required,
     weight: checkWeight(required),
   };
@@ -1014,6 +1115,20 @@ function durationCheck(
     value: formatSeconds(actualSeconds),
     target: `${formatSeconds(expectedSeconds)} expected`,
     detail: `Capture duration ratio is ${ratio.toFixed(2)}.`,
+    margin_to_pass:
+      status === "pass"
+        ? null
+        : formatSeconds(
+            actualSeconds < expectedSeconds * 0.9
+              ? expectedSeconds * 0.9 - actualSeconds
+              : actualSeconds - expectedSeconds * 1.15,
+          ),
+    counterfactual:
+      status === "pass"
+        ? null
+        : actualSeconds < expectedSeconds * 0.9
+          ? `Add ${formatSeconds(expectedSeconds * 0.9 - actualSeconds)} to reach the preferred duration window.`
+          : `Trim ${formatSeconds(actualSeconds - expectedSeconds * 1.15)} to reach the preferred duration window.`,
     required: true,
     weight: checkWeight(true),
   };
@@ -1029,6 +1144,11 @@ function sampleRateCheck(sampleRateHz: number): ValidationCheck {
     value: `${sampleRateHz} Hz`,
     target: ">= 44.1 kHz preferred",
     detail: "Native browser sample rate is preserved.",
+    margin_to_pass: status === "pass" ? null : `${44100 - sampleRateHz} Hz`,
+    counterfactual:
+      status === "pass"
+        ? null
+        : "Use a browser/device capture path reporting at least 44.1 kHz.",
     required: true,
     weight: checkWeight(true),
   };
@@ -1048,6 +1168,18 @@ function peakAmplitudeCheck(peakAmplitude: number): ValidationCheck {
     value: peakAmplitude.toFixed(3),
     target: "0.02 to 0.95",
     detail: "Avoid silent captures and clipped recordings.",
+    margin_to_pass:
+      status === "pass"
+        ? null
+        : peakAmplitude < 0.02
+          ? (0.02 - peakAmplitude).toFixed(3)
+          : (peakAmplitude - 0.95).toFixed(3),
+    counterfactual:
+      status === "pass"
+        ? null
+        : peakAmplitude < 0.02
+          ? `Increase peak amplitude by ${(0.02 - peakAmplitude).toFixed(3)} to enter the preferred range.`
+          : `Reduce peak amplitude by ${(peakAmplitude - 0.95).toFixed(3)} to avoid clipping risk.`,
     required: true,
     weight: checkWeight(true),
   };
@@ -1067,6 +1199,9 @@ function capturePathCheck(capturePath: string): ValidationCheck {
     value: capturePath,
     target: "audio_worklet preferred",
     detail: "AudioWorklet gives the most predictable PCM capture path.",
+    margin_to_pass: null,
+    counterfactual:
+      status === "pass" ? null : "Use an AudioWorklet capture path to pass.",
     required: false,
     weight: checkWeight(false),
   };
@@ -1080,6 +1215,10 @@ function browserProcessingCheck(processingFlags: string[]): ValidationCheck {
     value: processingFlags.length ? processingFlags.join(", ") : "off",
     target: "echo/AGC/noise processing off",
     detail: "Browser-forced processing can reshape acoustic fingerprints.",
+    margin_to_pass: null,
+    counterfactual: processingFlags.length
+      ? "Disable echo cancellation, noise suppression, and automatic gain controls where the browser allows it."
+      : null,
     required: false,
     weight: checkWeight(false),
   };
@@ -1104,6 +1243,14 @@ function decayFitCheck(
     target: "RT60 with fit >= 0.55 preferred",
     detail:
       "Decay quality is diagnostic and should not be treated as room identity.",
+    margin_to_pass:
+      status === "pass" || fitR2 === null ? null : (0.55 - fitR2).toFixed(3),
+    counterfactual:
+      status === "pass"
+        ? null
+        : fitR2 === null || !hasRt60
+          ? "Produce a stable RT60 proxy with fit >= 0.55 to pass."
+          : `Improve decay fit by ${(0.55 - fitR2).toFixed(3)} to reach preferred.`,
     required: false,
     weight: checkWeight(false),
   };
@@ -1190,32 +1337,6 @@ function statusScore(status: ValidationStatus): number {
   return 0;
 }
 
-function roomCharacter(rt60Seconds: number | null): string {
-  if (rt60Seconds === null || !Number.isFinite(rt60Seconds)) {
-    return MISSING;
-  }
-  if (rt60Seconds < 0.25) {
-    return "Dry";
-  }
-  if (rt60Seconds > 0.75) {
-    return "Live";
-  }
-  return "Balanced";
-}
-
-function brightness(centroidHz: number | null): string {
-  if (centroidHz === null || !Number.isFinite(centroidHz)) {
-    return MISSING;
-  }
-  if (centroidHz > 3500) {
-    return "Bright";
-  }
-  if (centroidHz < 1200) {
-    return "Dark";
-  }
-  return "Neutral";
-}
-
 function formatHz(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return MISSING;
@@ -1238,6 +1359,14 @@ function formatSeconds(value: number | null | undefined): string {
     return MISSING;
   }
   return `${value.toFixed(3)} s`;
+}
+
+function formatThreshold(
+  value: number,
+  precision: number,
+  unit: string,
+): string {
+  return `${value.toFixed(precision)}${unit}`;
 }
 
 function formatSigned(value: number, digits = 3, suffix = ""): string {

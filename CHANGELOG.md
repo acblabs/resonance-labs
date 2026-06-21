@@ -23,7 +23,11 @@ All notable changes to ResonanceLab will be documented in this file.
 - Room Acoustic Fingerprint product direction for chirp response, impulse/transfer evidence, spectrograms, decay, modes, and room descriptors.
 - Acoustic Image export roadmap covering polished PNG reports with response plots, spectrograms, decay bands, detected modes, descriptors, and caveats.
 - Structured `/api/v1/explain` endpoint with deterministic fallback summaries and optional Gemini lab-assistant calls over compact DSP evidence.
+- Explainability versioning, leaf JSON Pointer evidence refs, refs-resolved claim metadata, and authoritative server-resolved values for `/api/v1/explain`.
+- LLM claim grounding that logs and drops unresolvable claim refs before falling back to deterministic explanation text.
 - Lab UI explanation panel for observations, acoustic hypotheses, experiment design assistance, physics tutoring, low-confidence troubleshooting, evidence critique, caveats, and next-measurement guidance.
+- Validation and descriptor counterfactuals showing the margin or minimal change needed to flip run-quality and room-fingerprint labels.
+- Explainability documentation covering evidence refs, claim verification, counterfactual semantics, and future sensitivity guardrails.
 - Cloud Run deployment path in Cloud Build, gated by `_DEPLOY_TARGET=cloud-run` so default and PR builds do not deploy.
 - Cloud Run API and web deploys now explicitly use the second-generation execution environment with startup CPU boost enabled.
 - Structured API observability logs now include request IDs, request timing, analyze rejection reasons, analysis quality signals, LLM outcomes, and degradation markers.
@@ -66,6 +70,7 @@ All notable changes to ResonanceLab will be documented in this file.
 ### Fixed
 
 - Empty Gemini explanation responses now include finish-reason and token-usage diagnostics.
+- Lab UI and report exports now share room-character and brightness descriptor thresholds instead of duplicating frontend logic.
 - LLM explanation requests now exclude raw WAV bytes and full high-dimensional signal grids from the hosted model path.
 - Analyze rejects probe configurations whose chirp end frequency reaches the decoded WAV Nyquist limit.
 - Analyze uses browser timing metadata, when available, for the expected chirp position and post-roll analysis window.

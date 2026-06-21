@@ -263,19 +263,39 @@ class LlmExplainRequest(BaseModel):
     include_raw_audio: Literal[False] = False
 
 
+class ExplanationClaim(BaseModel):
+    text: str = Field(max_length=500)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=16)
+    refs_resolved: bool = False
+    grounding_status: Literal["deterministic_rule", "refs_resolved", "unverified"] = "unverified"
+    grounding_reason: str | None = Field(default=None, max_length=180)
+    authoritative_values: dict[str, Any] = Field(default_factory=dict)
+
+
 class LlmExplanation(BaseModel):
+    explainability_version: int = 1
     summary: str
+    summary_claim: ExplanationClaim | None = None
     observations: list[str] = Field(max_length=8)
+    observation_claims: list[ExplanationClaim] = Field(default_factory=list, max_length=8)
     acoustic_hypotheses: list[str] = Field(max_length=8)
+    acoustic_hypothesis_claims: list[ExplanationClaim] = Field(default_factory=list, max_length=8)
     experiment_design: list[str] = Field(max_length=8)
+    experiment_design_claims: list[ExplanationClaim] = Field(default_factory=list, max_length=8)
     physics_tutoring: list[str] = Field(max_length=8)
+    physics_tutoring_claims: list[ExplanationClaim] = Field(default_factory=list, max_length=8)
     troubleshooting: list[str] = Field(max_length=8)
+    troubleshooting_claims: list[ExplanationClaim] = Field(default_factory=list, max_length=8)
     evidence_critique: list[str] = Field(max_length=8)
+    evidence_critique_claims: list[ExplanationClaim] = Field(default_factory=list, max_length=8)
     caveats: list[str] = Field(max_length=8)
+    caveat_claims: list[ExplanationClaim] = Field(default_factory=list, max_length=8)
     next_measurement: list[str] = Field(max_length=8)
+    next_measurement_claims: list[ExplanationClaim] = Field(default_factory=list, max_length=8)
 
 
 class LlmExplainResponse(BaseModel):
+    explainability_version: int = 1
     status: Literal["ok", "disabled"]
     provider: Literal["vertex_gemini"]
     model: str

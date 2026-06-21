@@ -20,8 +20,13 @@ describe("acoustic report helpers", () => {
     );
 
     expect(report.schema_version).toBe("resonancelab.acoustic_report.v1");
+    expect(report.explainability_version).toBe(1);
     expect(report.descriptors.room_character).toBe("Live");
+    expect(report.descriptors.room_character_counterfactual).toContain(
+      "Balanced",
+    );
     expect(report.descriptors.brightness).toBe("Bright");
+    expect(report.descriptors.brightness_counterfactual).toContain("Neutral");
     expect(report.validation.status).toBe("pass");
     expect(report.method_notes.join(" ")).toContain("regularized driven-path");
     expect(report.method_notes.join(" ")).toContain("impulse envelope");
@@ -46,7 +51,9 @@ describe("acoustic report helpers", () => {
     const report = buildAcousticReport(makeAnalysis({ qFactor: 1175 }));
 
     expect(report.descriptors.dominant_mode).toContain("Q >300");
-    expect(report.descriptors.dominant_mode_note).toContain("Very narrow dominant peak");
+    expect(report.descriptors.dominant_mode_note).toContain(
+      "Very narrow dominant peak",
+    );
     expect(report.caveats.join(" ")).toContain("Very narrow dominant peak");
   });
 
@@ -85,6 +92,10 @@ describe("acoustic report helpers", () => {
     expect(validation.advisory_score).toBeLessThan(1);
     expect(validation.score).toBeGreaterThan(validation.advisory_score);
     expect(validation.score_model).toContain("required checks carry double");
+    expect(
+      validation.checks.find((check) => check.id === "capture_path")
+        ?.counterfactual,
+    ).toContain("AudioWorklet");
   });
 
   it("pins duration, sample-rate, capture-path, and decay validation boundaries", () => {
@@ -98,35 +109,60 @@ describe("acoustic report helpers", () => {
       checkStatus(makeAnalysis({ durationSeconds: 1.75 * 0.74 }), "duration"),
     ).toBe("fail");
 
-    expect(checkStatus(makeAnalysis({ sampleRateHz: 44100 }), "sample_rate")).toBe(
-      "pass",
-    );
-    expect(checkStatus(makeAnalysis({ sampleRateHz: 16000 }), "sample_rate")).toBe(
-      "review",
-    );
-    expect(checkStatus(makeAnalysis({ sampleRateHz: 15999 }), "sample_rate")).toBe(
-      "fail",
-    );
-
-    expect(checkStatus(makeAnalysis({ capturePath: "audio_worklet" }), "capture_path")).toBe(
-      "pass",
-    );
     expect(
-      checkStatus(makeAnalysis({ capturePath: "script_processor" }), "capture_path"),
+      checkStatus(makeAnalysis({ sampleRateHz: 44100 }), "sample_rate"),
+    ).toBe("pass");
+    expect(
+      checkStatus(makeAnalysis({ sampleRateHz: 16000 }), "sample_rate"),
     ).toBe("review");
-    expect(checkStatus(makeAnalysis({ capturePath: "unknown" }), "capture_path")).toBe(
-      "fail",
-    );
+    expect(
+      checkStatus(makeAnalysis({ sampleRateHz: 15999 }), "sample_rate"),
+    ).toBe("fail");
 
-    expect(checkStatus(makeAnalysis({ fitR2: 0.55, rt60Seconds: 0.8 }), "decay_fit")).toBe(
-      "pass",
+    expect(
+      checkStatus(
+        makeAnalysis({ capturePath: "audio_worklet" }),
+        "capture_path",
+      ),
+    ).toBe("pass");
+    expect(
+      checkStatus(
+        makeAnalysis({ capturePath: "script_processor" }),
+        "capture_path",
+      ),
+    ).toBe("review");
+    expect(
+      checkStatus(makeAnalysis({ capturePath: "unknown" }), "capture_path"),
+    ).toBe("fail");
+
+    expect(
+      checkStatus(makeAnalysis({ fitR2: 0.55, rt60Seconds: 0.8 }), "decay_fit"),
+    ).toBe("pass");
+    expect(
+      checkStatus(makeAnalysis({ fitR2: 0.3, rt60Seconds: 0.8 }), "decay_fit"),
+    ).toBe("review");
+    expect(
+      checkStatus(
+        makeAnalysis({ fitR2: null, rt60Seconds: null }),
+        "decay_fit",
+      ),
+    ).toBe("fail");
+  });
+
+  it("adds validation counterfactual margins", () => {
+    const snr = validationCheck(
+      makeAnalysis({ signalToNoiseDb: 14 }),
+      "snr_db",
     );
-    expect(checkStatus(makeAnalysis({ fitR2: 0.3, rt60Seconds: 0.8 }), "decay_fit")).toBe(
-      "review",
+    expect(snr.status).toBe("review");
+    expect(snr.margin_to_pass).toBe("4.0 dB");
+    expect(snr.counterfactual).toContain("+4.0 dB");
+
+    const duration = validationCheck(
+      makeAnalysis({ durationSeconds: 1.75 * 0.75 }),
+      "duration",
     );
-    expect(checkStatus(makeAnalysis({ fitR2: null, rt60Seconds: null }), "decay_fit")).toBe(
-      "fail",
-    );
+    expect(duration.counterfactual).toContain("Add");
   });
 
   it("marks truncated wrapped export text with an ellipsis", () => {
@@ -169,23 +205,25 @@ describe("acoustic report helpers", () => {
       new Date("2026-06-20T16:35:00Z"),
     );
 
-    const parsed = parseAcousticReportPayload(JSON.parse(JSON.stringify(first)));
+    const parsed = parseAcousticReportPayload(
+      JSON.parse(JSON.stringify(first)),
+    );
     const comparison = compareAcousticReports(parsed, second);
 
     expect(comparison.same_capture_condition).toBe(true);
-    expect(comparison.metrics.find((metric) => metric.id === "snr")?.delta).toBe(
-      "-4.0 dB",
-    );
-    expect(comparison.metrics.find((metric) => metric.id === "rt60")?.second).toBe(
-      "0.920 s",
-    );
+    expect(
+      comparison.metrics.find((metric) => metric.id === "snr")?.delta,
+    ).toBe("-4.0 dB");
+    expect(
+      comparison.metrics.find((metric) => metric.id === "rt60")?.second,
+    ).toBe("0.920 s");
     expect(comparison.transfer_bands[0].delta).toBe("0.0 dB");
   });
 
   it("rejects non-report comparison imports", () => {
-    expect(() => parseAcousticReportPayload({ schema_version: "elsewhere" })).toThrow(
-      "ResonanceLab acoustic report",
-    );
+    expect(() =>
+      parseAcousticReportPayload({ schema_version: "elsewhere" }),
+    ).toThrow("ResonanceLab acoustic report");
   });
 });
 
@@ -392,10 +430,14 @@ function loadGoldenAnalysisFixture(): AnalysisResponse {
 }
 
 function checkStatus(analysis: AnalysisResponse, id: string) {
+  return validationCheck(analysis, id).status;
+}
+
+function validationCheck(analysis: AnalysisResponse, id: string) {
   const validation = buildDeviceValidation(analysis);
   const check = validation.checks.find((candidate) => candidate.id === id);
   expect(check, `missing validation check ${id}`).toBeTruthy();
-  return check?.status;
+  return check!;
 }
 
 function findForbiddenKeys(value: unknown): string[] {

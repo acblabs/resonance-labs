@@ -514,6 +514,15 @@ button {
   overflow-wrap: anywhere;
 }
 
+.validation-row small {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .validation-row em {
   color: var(--muted);
   font-size: 0.76rem;

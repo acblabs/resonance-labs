@@ -3,15 +3,23 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import struct
 import unittest
 import wave
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
 from app.main import create_app
+from app.services.explainer import (
+    BRIGHT_CENTROID_HZ,
+    DARK_CENTROID_HZ,
+    DRY_RT60_SECONDS,
+    LIVE_RT60_SECONDS,
+)
 from app.settings import get_settings
 from fastapi.testclient import TestClient
 from resonancelab.audio import decode_wav_pcm
@@ -103,6 +111,36 @@ class Phase1ApiTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["default"]["signal_type"], "log_chirp")
         self.assertEqual(payload["default"]["amplitude"], 0.35)
+
+    def test_explainability_descriptor_thresholds_match_frontend(self) -> None:
+        report_source = (
+            Path(__file__).resolve().parents[3]
+            / "apps"
+            / "web"
+            / "src"
+            / "lib"
+            / "report"
+            / "acousticReport.ts"
+        ).read_text(encoding="utf-8")
+        threshold_pattern = (
+            r"const\s+"
+            r"(?P<name>(?:DRY|LIVE)_RT60_SECONDS|(?:DARK|BRIGHT)_CENTROID_HZ)"
+            r"\s*=\s*(?P<value>[0-9.]+);"
+        )
+        frontend_thresholds = {
+            match.group("name"): float(match.group("value"))
+            for match in re.finditer(threshold_pattern, report_source)
+        }
+
+        self.assertEqual(
+            frontend_thresholds,
+            {
+                "DRY_RT60_SECONDS": DRY_RT60_SECONDS,
+                "LIVE_RT60_SECONDS": LIVE_RT60_SECONDS,
+                "DARK_CENTROID_HZ": DARK_CENTROID_HZ,
+                "BRIGHT_CENTROID_HZ": BRIGHT_CENTROID_HZ,
+            },
+        )
 
     def test_models_endpoint_returns_typed_phase_status(self) -> None:
         response = self.client.get("/api/v1/models")
@@ -270,17 +308,46 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["status"], "disabled")
+        self.assertEqual(payload["explainability_version"], 1)
         self.assertFalse(payload["raw_audio_sent"])
         self.assertEqual(payload["provider"], "vertex_gemini")
         self.assertEqual(payload["model"], "gemini-3.1-pro-preview")
         self.assertEqual(payload["region"], "global")
-        self.assertGreater(len(payload["explanation"]["observations"]), 0)
-        self.assertGreater(len(payload["explanation"]["acoustic_hypotheses"]), 0)
-        self.assertGreater(len(payload["explanation"]["experiment_design"]), 0)
-        self.assertGreater(len(payload["explanation"]["physics_tutoring"]), 0)
-        self.assertGreater(len(payload["explanation"]["troubleshooting"]), 0)
-        self.assertGreater(len(payload["explanation"]["evidence_critique"]), 0)
+        explanation = payload["explanation"]
+        self.assertEqual(explanation["explainability_version"], 1)
+        self.assertIsNotNone(explanation["summary_claim"])
+        self.assertTrue(explanation["summary_claim"]["refs_resolved"])
+        self.assertEqual(
+            explanation["summary_claim"]["grounding_status"],
+            "deterministic_rule",
+        )
+        self.assertGreater(len(explanation["observations"]), 0)
+        self.assertGreater(len(explanation["observation_claims"]), 0)
+        self.assertTrue(explanation["observation_claims"][0]["refs_resolved"])
+        self.assertEqual(
+            explanation["observation_claims"][0]["grounding_status"],
+            "deterministic_rule",
+        )
+        self.assertIn(
+            "/quality/alignment_confidence",
+            explanation["observation_claims"][0]["evidence_refs"],
+        )
+        self.assertIn(
+            "/quality/alignment_confidence",
+            explanation["observation_claims"][0]["authoritative_values"],
+        )
+        self.assertGreater(len(explanation["acoustic_hypotheses"]), 0)
+        self.assertGreater(len(explanation["experiment_design"]), 0)
+        self.assertGreater(len(explanation["physics_tutoring"]), 0)
+        self.assertGreater(len(explanation["troubleshooting"]), 0)
+        self.assertGreater(len(explanation["evidence_critique"]), 0)
         self.assertNotIn("series", json.dumps(payload["evidence"]))
+        for claim in _explanation_claims(explanation):
+            self.assertTrue(claim["refs_resolved"], claim)
+            self.assertEqual(claim["grounding_status"], "deterministic_rule", claim)
+            self.assertTrue(claim["evidence_refs"], claim)
+            for value in claim["authoritative_values"].values():
+                self.assertNotIsInstance(value, (dict, list), claim)
 
     def test_explain_troubleshoots_low_confidence_captures(self) -> None:
         analysis = self._analyze_probe_payload()
@@ -423,11 +490,109 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["status"], "ok")
-        self.assertEqual(payload["explanation"]["summary"], "Plain-language fallback summary.")
+        self.assertNotEqual(payload["explanation"]["summary"], "Plain-language fallback summary.")
         events = [json.loads(record.getMessage()) for record in captured.records]
         non_json = next(event for event in events if event["event"] == "llm_response_non_json")
         self.assertEqual(non_json["request_id"], "llm-non-json-test")
         self.assertEqual(non_json["analysis_id"], analysis["analysis_id"])
+        summary_ungrounded = next(
+            event for event in events if event["event"] == "llm_summary_ungrounded"
+        )
+        self.assertEqual(summary_ungrounded["reason"], "missing_summary_claim")
+
+    def test_explain_drops_ungrounded_gemini_claims(self) -> None:
+        analysis = self._analyze_probe_payload()
+
+        class FakeGenerateContentConfig:
+            def __init__(self, **kwargs) -> None:
+                self.kwargs = kwargs
+
+        class FakeThinkingConfig:
+            def __init__(self, **kwargs) -> None:
+                self.kwargs = kwargs
+
+        class FakeThinkingLevel:
+            HIGH = "HIGH"
+
+        class FakeTypes:
+            GenerateContentConfig = FakeGenerateContentConfig
+            ThinkingConfig = FakeThinkingConfig
+            ThinkingLevel = FakeThinkingLevel
+
+        class FakeModels:
+            def generate_content(self, **kwargs):
+                payload = {
+                    "summary": "Grounded Gemini summary.",
+                    "summary_claim": {
+                        "text": "Grounded Gemini summary.",
+                        "evidence_refs": ["/quality/snr_db"],
+                    },
+                    "observation_claims": [
+                        {
+                            "text": "Grounded SNR claim.",
+                            "evidence_refs": ["/quality/snr_db"],
+                        },
+                        {
+                            "text": "Fabricated sensor claim.",
+                            "evidence_refs": ["/dsp/not_a_real_field"],
+                        },
+                        {
+                            "text": "Overbroad probe subtree claim.",
+                            "evidence_refs": ["/probe"],
+                        },
+                    ],
+                }
+                return SimpleNamespace(
+                    text=json.dumps(payload),
+                    candidates=[SimpleNamespace(finish_reason="STOP")],
+                    usage_metadata=SimpleNamespace(total_token_count=64),
+                )
+
+        class FakeClient:
+            models = FakeModels()
+
+        with (
+            patch.dict(os.environ, {"RESONANCELAB_LLM_ENABLED": "true"}),
+            patch("app.services.explainer._vertex_client", return_value=(FakeClient(), FakeTypes)),
+            self.assertLogs("app.services.explainer", level="WARNING") as captured,
+        ):
+            get_settings.cache_clear()
+            client = TestClient(create_app())
+            response = client.post(
+                "/api/v1/explain",
+                headers={"X-Request-ID": "llm-grounding-test"},
+                json={"analysis": analysis, "include_raw_audio": False},
+            )
+            get_settings.cache_clear()
+
+        self.assertEqual(response.status_code, 200)
+        explanation = response.json()["explanation"]
+        self.assertEqual(explanation["summary"], "Grounded Gemini summary.")
+        self.assertTrue(explanation["summary_claim"]["refs_resolved"])
+        self.assertEqual(explanation["summary_claim"]["grounding_status"], "refs_resolved")
+        self.assertEqual(explanation["observations"], ["Grounded SNR claim."])
+        snr_value = explanation["observation_claims"][0]["authoritative_values"][
+            "/quality/snr_db"
+        ]
+        self.assertIsInstance(snr_value, float)
+        self.assertTrue(explanation["observation_claims"][0]["refs_resolved"])
+        self.assertEqual(
+            explanation["observation_claims"][0]["grounding_status"],
+            "refs_resolved",
+        )
+        self.assertNotIn("Fabricated sensor claim", json.dumps(explanation))
+        self.assertNotIn("Overbroad probe subtree claim", json.dumps(explanation))
+        events = [json.loads(record.getMessage()) for record in captured.records]
+        ungrounded = [
+            event for event in events if event["event"] == "llm_claim_ungrounded"
+        ]
+        self.assertTrue(
+            any("/dsp/not_a_real_field" in event["evidence_refs"] for event in ungrounded)
+        )
+        self.assertTrue(any(event["reason"] == "container_ref:/probe" for event in ungrounded))
+        self.assertTrue(
+            all(event["request_id"] == "llm-grounding-test" for event in ungrounded)
+        )
 
     def test_explain_rejects_raw_audio_flag(self) -> None:
         analysis = self._analyze_probe_payload()
@@ -479,6 +644,17 @@ def _probe_metadata() -> dict:
         },
         "client_recorded_at": "2026-06-19T14:00:00Z",
     }
+
+
+def _explanation_claims(explanation: dict) -> list[dict]:
+    claims: list[dict] = []
+    summary_claim = explanation.get("summary_claim")
+    if summary_claim:
+        claims.append(summary_claim)
+    for key, value in explanation.items():
+        if key.endswith("_claims") and isinstance(value, list):
+            claims.extend(claim for claim in value if isinstance(claim, dict))
+    return claims
 
 
 if __name__ == "__main__":

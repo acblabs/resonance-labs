@@ -9,10 +9,32 @@ from functools import lru_cache
 from typing import Any
 
 from app.observability import log_event
-from app.schemas import LlmExplainRequest, LlmExplainResponse, LlmExplanation
+from app.schemas import (
+    ExplanationClaim,
+    LlmExplainRequest,
+    LlmExplainResponse,
+    LlmExplanation,
+)
 from app.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+EXPLAINABILITY_VERSION = 1
+DRY_RT60_SECONDS = 0.25
+LIVE_RT60_SECONDS = 0.75
+DARK_CENTROID_HZ = 1200.0
+BRIGHT_CENTROID_HZ = 3500.0
+
+SECTION_CLAIM_FIELDS = {
+    "observations": "observation_claims",
+    "acoustic_hypotheses": "acoustic_hypothesis_claims",
+    "experiment_design": "experiment_design_claims",
+    "physics_tutoring": "physics_tutoring_claims",
+    "troubleshooting": "troubleshooting_claims",
+    "evidence_critique": "evidence_critique_claims",
+    "caveats": "caveat_claims",
+    "next_measurement": "next_measurement_claims",
+}
 
 
 class LlmExplanationError(RuntimeError):
@@ -25,9 +47,15 @@ Frame outputs as room acoustic fingerprints, not spatial maps or object identity
 Do not claim medical, legal, safety, material, or geometry certainty.
 Do not ask for or infer from raw audio. The raw WAV is intentionally absent.
 Return compact JSON with keys: summary, observations, acoustic_hypotheses,
-experiment_design, physics_tutoring, troubleshooting, evidence_critique,
-caveats, next_measurement.
-Each list should contain short, evidence-grounded strings."""
+summary_claim, experiment_design, physics_tutoring, troubleshooting,
+evidence_critique, caveats, next_measurement, observation_claims,
+acoustic_hypothesis_claims,
+experiment_design_claims, physics_tutoring_claims, troubleshooting_claims,
+evidence_critique_claims, caveat_claims, next_measurement_claims.
+Each legacy list should contain short strings. summary_claim and each *_claims
+list should contain objects with text and evidence_refs. evidence_refs must be
+leaf JSON Pointer paths from the supplied valid_evidence_refs list. Do not invent
+refs, cite raw audio, or cite whole evidence subtrees."""
 
 
 def explain_probe_result(
@@ -156,6 +184,11 @@ def build_evidence_packet(request: LlmExplainRequest) -> dict[str, Any]:
     ]
     evidence: dict[str, Any] = {
         "analysis_id": str(analysis.analysis_id),
+        "method": {
+            "scope": "room_acoustic_fingerprint",
+            "raw_audio_to_llm": False,
+            "claim_boundary": "single_speaker_microphone_acoustic_features",
+        },
         "audio": {
             "sample_rate_hz": analysis.audio.sample_rate_hz,
             "duration_seconds": _round_float(analysis.audio.duration_seconds, 4),
@@ -245,78 +278,163 @@ def deterministic_explanation(evidence: dict[str, Any]) -> LlmExplanation:
     centroid = dsp.get("spectral_centroid_hz")
     summary = "This chirp produced a structured acoustic fingerprint of the capture space."
     if rt60 is not None:
-        if rt60 < 0.25:
+        if rt60 < DRY_RT60_SECONDS:
             summary = "This capture has a short decay tail, suggesting a relatively dry space."
-        elif rt60 > 0.75:
+        elif rt60 > LIVE_RT60_SECONDS:
             summary = "This capture has a longer decay tail, suggesting a livelier echo response."
-    if centroid is not None and centroid > 3000:
-        summary += " The spectrum is weighted toward brighter high-frequency energy."
+    if centroid is not None:
+        if centroid < DARK_CENTROID_HZ:
+            summary += " The spectrum is weighted toward darker low-frequency energy."
+        elif centroid > BRIGHT_CENTROID_HZ:
+            summary += " The spectrum is weighted toward brighter high-frequency energy."
+    summary_refs = ["/method/scope"]
+    if rt60 is not None:
+        summary_refs.append("/dsp/decay/rt60_seconds")
+    if centroid is not None:
+        summary_refs.append("/dsp/spectral_centroid_hz")
+    summary_claim = _deterministic_claim(summary, summary_refs, evidence)
 
-    observations = [
-        (
-            "Alignment confidence is "
-            f"{quality['alignment_confidence']:.3f}; SNR is "
-            f"{_format_optional(quality.get('snr_db'), ' dB')}."
-        ),
-        (
-            "Spectral centroid is "
-            f"{_format_optional(dsp.get('spectral_centroid_hz'), ' Hz')} and rolloff is "
-            f"{_format_optional(dsp.get('spectral_rolloff_hz'), ' Hz')}."
-        ),
-    ]
+    observations: list[str] = []
+    observation_claims: list[ExplanationClaim] = []
+    text = (
+        "Alignment confidence is "
+        f"{quality['alignment_confidence']:.3f}; SNR is "
+        f"{_format_optional(quality.get('snr_db'), ' dB')}."
+    )
+    observations.append(text)
+    observation_claims.append(
+        _deterministic_claim(text, ["/quality/alignment_confidence", "/quality/snr_db"], evidence)
+    )
+    text = (
+        "Spectral centroid is "
+        f"{_format_optional(dsp.get('spectral_centroid_hz'), ' Hz')} and rolloff is "
+        f"{_format_optional(dsp.get('spectral_rolloff_hz'), ' Hz')}."
+    )
+    observations.append(text)
+    observation_claims.append(
+        _deterministic_claim(
+            text,
+            ["/dsp/spectral_centroid_hz", "/dsp/spectral_rolloff_hz"],
+            evidence,
+        )
+    )
     if top_peak:
-        observations.append(
+        text = (
             "Dominant peak is "
             f"{top_peak['frequency_hz']:.1f} Hz with "
             f"{top_peak['prominence_db']:.1f} dB prominence."
         )
-    decay_bands = [
-        band
-        for band in dsp.get("decay_bands", [])
+        observations.append(text)
+        observation_claims.append(
+            _deterministic_claim(
+                text,
+                [
+                    "/dsp/dominant_peaks/0/frequency_hz",
+                    "/dsp/dominant_peaks/0/prominence_db",
+                ],
+                evidence,
+            )
+        )
+    decay_band_items = [
+        (index, band)
+        for index, band in enumerate(dsp.get("decay_bands", []))
         if band.get("rt60_seconds") is not None
     ]
+    decay_bands = [band for _, band in decay_band_items]
     if decay_bands:
         band_summary = ", ".join(
             f"{band['label']} {band['rt60_seconds']:.2f}s" for band in decay_bands[:3]
         )
-        observations.append(f"Band-limited RT60 proxies are {band_summary}.")
+        text = f"Band-limited RT60 proxies are {band_summary}."
+        observations.append(text)
+        refs = [
+            ref
+            for index, _ in decay_band_items[:3]
+            for ref in (f"/dsp/decay_bands/{index}/label", f"/dsp/decay_bands/{index}/rt60_seconds")
+        ]
+        observation_claims.append(_deterministic_claim(text, refs, evidence))
     response_balance = _response_balance_observation(dsp.get("response_traces", {}))
     if response_balance:
         observations.append(response_balance)
+        observation_claims.append(
+            _deterministic_claim(
+                response_balance,
+                [
+                    "/dsp/response_traces/matched_filter/direct_to_late_db",
+                    "/dsp/response_traces/regularized_deconvolution/direct_to_late_db",
+                ],
+                evidence,
+            )
+        )
     mode_groups = dsp.get("mode_groups", [])
     if mode_groups:
         strongest = mode_groups[0]
         labels = ", ".join(strongest.get("warning_labels", [])) or "stable"
-        observations.append(
+        text = (
             "Low-frequency grouping centers near "
             f"{strongest['center_hz']:.1f} Hz with labels: {labels}."
+        )
+        observations.append(text)
+        observation_claims.append(
+            _deterministic_claim(
+                text,
+                ["/dsp/mode_groups/0/center_hz", "/dsp/mode_groups/0/warning_labels"],
+                evidence,
+            )
         )
     mfcc_coefficients = dsp.get("mfcc", {}).get("coefficients", [])
     if mfcc_coefficients:
         compact_mfcc = ", ".join(
             f"C{item['index']} {item['mean']:.2f}" for item in mfcc_coefficients[:4]
         )
-        observations.append(f"MFCC mean summary begins {compact_mfcc}.")
+        text = f"MFCC mean summary begins {compact_mfcc}."
+        observations.append(text)
+        refs = [
+            ref
+            for index, _ in enumerate(mfcc_coefficients[:4])
+            for ref in (
+                f"/dsp/mfcc/coefficients/{index}/index",
+                f"/dsp/mfcc/coefficients/{index}/mean",
+            )
+        ]
+        observation_claims.append(_deterministic_claim(text, refs, evidence))
 
     acoustic_hypotheses: list[str] = []
+    acoustic_hypothesis_claims: list[ExplanationClaim] = []
     if rt60 is None:
-        acoustic_hypotheses.append("Decay tail was not stable enough for an RT60 proxy.")
-    elif rt60 < 0.25:
-        acoustic_hypotheses.append("Short decay suggests a dry or strongly damped capture space.")
-    elif rt60 > 0.75:
-        acoustic_hypotheses.append(
-            "Longer decay suggests a reflective or echo-prone capture space."
-        )
+        text = "Decay tail was not stable enough for an RT60 proxy."
+    elif rt60 < DRY_RT60_SECONDS:
+        text = "Short decay suggests a dry or strongly damped capture space."
+    elif rt60 > LIVE_RT60_SECONDS:
+        text = "Longer decay suggests a reflective or echo-prone capture space."
     else:
-        acoustic_hypotheses.append("Mid-length decay suggests a moderately live capture space.")
+        text = "Mid-length decay suggests a moderately live capture space."
+    acoustic_hypotheses.append(text)
+    acoustic_hypothesis_claims.append(
+        _deterministic_claim(text, ["/dsp/decay/rt60_seconds"], evidence)
+    )
     if top_peak:
-        acoustic_hypotheses.append(
-            f"The strongest modal feature is near {top_peak['frequency_hz']:.1f} Hz."
+        text = f"The strongest modal feature is near {top_peak['frequency_hz']:.1f} Hz."
+        acoustic_hypotheses.append(text)
+        acoustic_hypothesis_claims.append(
+            _deterministic_claim(text, ["/dsp/dominant_peaks/0/frequency_hz"], evidence)
         )
     if len(decay_bands) >= 2:
-        slowest = max(decay_bands, key=lambda band: band["rt60_seconds"])
-        acoustic_hypotheses.append(
-            f"The {slowest['label']} band has the slowest visible decay in this capture."
+        slowest_index, slowest = max(
+            decay_band_items,
+            key=lambda item: item[1]["rt60_seconds"],
+        )
+        text = f"The {slowest['label']} band has the slowest visible decay in this capture."
+        acoustic_hypotheses.append(text)
+        acoustic_hypothesis_claims.append(
+            _deterministic_claim(
+                text,
+                [
+                    f"/dsp/decay_bands/{slowest_index}/label",
+                    f"/dsp/decay_bands/{slowest_index}/rt60_seconds",
+                ],
+                evidence,
+            )
         )
 
     caveats = [
@@ -342,16 +460,33 @@ def deterministic_explanation(evidence: dict[str, Any]) -> LlmExplanation:
             "Reduce room noise or increase playback volume slightly before trusting descriptors."
         )
 
+    experiment_design = _experiment_design_guidance(evidence)[:6]
+    physics_tutoring = _physics_tutoring(evidence)[:6]
+    troubleshooting = _troubleshooting_guidance(evidence)[:6]
+    evidence_critique = _evidence_critique(evidence)[:6]
+    caveats = caveats[:6]
+    next_measurement = next_measurement[:5]
+
     return LlmExplanation(
+        explainability_version=EXPLAINABILITY_VERSION,
         summary=summary,
+        summary_claim=summary_claim,
         observations=observations[:6],
+        observation_claims=observation_claims[:6],
         acoustic_hypotheses=acoustic_hypotheses[:4],
-        experiment_design=_experiment_design_guidance(evidence)[:6],
-        physics_tutoring=_physics_tutoring(evidence)[:6],
-        troubleshooting=_troubleshooting_guidance(evidence)[:6],
-        evidence_critique=_evidence_critique(evidence)[:6],
-        caveats=caveats[:6],
-        next_measurement=next_measurement[:5],
+        acoustic_hypothesis_claims=acoustic_hypothesis_claims[:4],
+        experiment_design=experiment_design,
+        experiment_design_claims=[],
+        physics_tutoring=physics_tutoring,
+        physics_tutoring_claims=[],
+        troubleshooting=troubleshooting,
+        troubleshooting_claims=[],
+        evidence_critique=evidence_critique,
+        evidence_critique_claims=[],
+        caveats=caveats,
+        caveat_claims=[],
+        next_measurement=next_measurement,
+        next_measurement_claims=[],
     )
 
 
@@ -595,7 +730,7 @@ def _generate_vertex_gemini_explanation(
             "caveats": fallback.caveats,
             "next_measurement": fallback.next_measurement,
         }
-        generated = _coerce_explanation(payload, fallback)
+        generated = _coerce_explanation(payload, fallback, evidence, request_id)
         log_event(
             logger,
             "llm_explain_completed",
@@ -610,7 +745,7 @@ def _generate_vertex_gemini_explanation(
         )
         return generated
 
-    generated = _coerce_explanation(payload, fallback)
+    generated = _coerce_explanation(payload, fallback, evidence, request_id)
     log_event(
         logger,
         "llm_explain_completed",
@@ -644,11 +779,16 @@ def _vertex_client(project_id: str | None, location: str):
 
 
 def _prompt_from_evidence(evidence: dict[str, Any]) -> str:
+    prompt_payload = {
+        "evidence": evidence,
+        "valid_evidence_refs": sorted(_iter_json_pointer_paths(evidence)),
+    }
     return (
         "Explain this ResonanceLab probe result from structured evidence only. "
         "Separate measured observations, acoustic hypotheses, experiment design, "
-        "physics tutoring, troubleshooting, evidence critique, and caveats.\n\n"
-        f"{json.dumps(evidence, sort_keys=True, separators=(',', ':'))}"
+        "physics tutoring, troubleshooting, evidence critique, and caveats. "
+        "Every claim object must cite only valid_evidence_refs.\n\n"
+        f"{json.dumps(prompt_payload, sort_keys=True, separators=(',', ':'))}"
     )
 
 
@@ -716,21 +856,271 @@ def _duration_ms(started: float) -> float:
     return round((time.perf_counter() - started) * 1000.0, 2)
 
 
-def _coerce_explanation(payload: dict[str, Any], fallback: LlmExplanation) -> LlmExplanation:
+def _coerce_explanation(
+    payload: dict[str, Any],
+    fallback: LlmExplanation,
+    evidence: dict[str, Any],
+    request_id: str | None,
+) -> LlmExplanation:
+    if not isinstance(payload, dict):
+        payload = {}
+    summary = fallback.summary
+    summary_claim = fallback.summary_claim
+    payload_summary_claim = payload.get("summary_claim")
+    if payload_summary_claim is not None:
+        claim = _claim_from_payload(payload_summary_claim, evidence)
+        if claim.refs_resolved:
+            summary = claim.text
+            summary_claim = claim
+        elif claim.text:
+            _log_rejected_claim(
+                claim,
+                evidence=evidence,
+                request_id=request_id,
+                section="summary",
+            )
+    elif _string_or(payload.get("summary"), ""):
+        log_event(
+            logger,
+            "llm_summary_ungrounded",
+            level=logging.WARNING,
+            request_id=request_id,
+            analysis_id=evidence.get("analysis_id"),
+            reason="missing_summary_claim",
+            summary_preview=str(payload.get("summary", ""))[:120],
+        )
+
+    section_values: dict[str, list[str]] = {}
+    claim_values: dict[str, list[ExplanationClaim]] = {}
+    for section, claim_field in SECTION_CLAIM_FIELDS.items():
+        payload_claims = payload.get(claim_field)
+        fallback_texts = getattr(fallback, section)
+        fallback_claims = getattr(fallback, claim_field)
+        if payload_claims is None:
+            if isinstance(payload.get(section), list):
+                log_event(
+                    logger,
+                    "llm_legacy_claims_ignored",
+                    level=logging.WARNING,
+                    request_id=request_id,
+                    analysis_id=evidence.get("analysis_id"),
+                    section=section,
+                    reason="missing_claim_objects",
+                    legacy_count=len(payload.get(section, [])),
+                )
+            section_values[section] = fallback_texts
+            claim_values[claim_field] = fallback_claims
+            continue
+
+        claims, rejected_claims = _resolved_claims_from_payload(payload_claims, evidence)
+        for claim in rejected_claims:
+            _log_rejected_claim(
+                claim,
+                evidence=evidence,
+                request_id=request_id,
+                section=section,
+            )
+
+        if claims:
+            section_values[section] = [claim.text for claim in claims[:8]]
+            claim_values[claim_field] = claims[:8]
+        else:
+            section_values[section] = fallback_texts
+            claim_values[claim_field] = fallback_claims
+
     return LlmExplanation(
-        summary=_string_or(payload.get("summary"), fallback.summary),
-        observations=_list_or(payload.get("observations"), fallback.observations),
-        acoustic_hypotheses=_list_or(
-            payload.get("acoustic_hypotheses"),
-            fallback.acoustic_hypotheses,
-        ),
-        experiment_design=_list_or(payload.get("experiment_design"), fallback.experiment_design),
-        physics_tutoring=_list_or(payload.get("physics_tutoring"), fallback.physics_tutoring),
-        troubleshooting=_list_or(payload.get("troubleshooting"), fallback.troubleshooting),
-        evidence_critique=_list_or(payload.get("evidence_critique"), fallback.evidence_critique),
-        caveats=_list_or(payload.get("caveats"), fallback.caveats),
-        next_measurement=_list_or(payload.get("next_measurement"), fallback.next_measurement),
+        explainability_version=EXPLAINABILITY_VERSION,
+        summary=summary,
+        summary_claim=summary_claim,
+        observations=section_values["observations"],
+        observation_claims=claim_values["observation_claims"],
+        acoustic_hypotheses=section_values["acoustic_hypotheses"],
+        acoustic_hypothesis_claims=claim_values["acoustic_hypothesis_claims"],
+        experiment_design=section_values["experiment_design"],
+        experiment_design_claims=claim_values["experiment_design_claims"],
+        physics_tutoring=section_values["physics_tutoring"],
+        physics_tutoring_claims=claim_values["physics_tutoring_claims"],
+        troubleshooting=section_values["troubleshooting"],
+        troubleshooting_claims=claim_values["troubleshooting_claims"],
+        evidence_critique=section_values["evidence_critique"],
+        evidence_critique_claims=claim_values["evidence_critique_claims"],
+        caveats=section_values["caveats"],
+        caveat_claims=claim_values["caveat_claims"],
+        next_measurement=section_values["next_measurement"],
+        next_measurement_claims=claim_values["next_measurement_claims"],
     )
+
+
+def _resolved_claims_from_payload(
+    value: Any,
+    evidence: dict[str, Any],
+) -> tuple[list[ExplanationClaim], list[ExplanationClaim]]:
+    if not isinstance(value, list):
+        return [], [
+            ExplanationClaim(
+                text="",
+                refs_resolved=False,
+                grounding_status="unverified",
+                grounding_reason="claim_section_not_a_list",
+            )
+        ]
+
+    resolved: list[ExplanationClaim] = []
+    rejected: list[ExplanationClaim] = []
+    for item in value[:8]:
+        claim = _claim_from_payload(item, evidence)
+        if claim.refs_resolved:
+            resolved.append(claim)
+        elif claim.text:
+            rejected.append(claim)
+    return resolved, rejected
+
+
+def _claim_from_payload(
+    item: Any,
+    evidence: dict[str, Any],
+) -> ExplanationClaim:
+    if isinstance(item, dict):
+        text = _string_or(item.get("text"), "")
+        raw_refs = item.get("evidence_refs")
+    else:
+        text = str(item).strip()
+        raw_refs = None
+    refs = (
+        [ref for ref in raw_refs if isinstance(ref, str)]
+        if isinstance(raw_refs, list)
+        else []
+    )
+    return _claim_from_refs(text, refs, evidence, grounding_status="refs_resolved")
+
+
+def _deterministic_claim(
+    text: str,
+    refs: list[str],
+    evidence: dict[str, Any],
+) -> ExplanationClaim:
+    return _claim_from_refs(text, refs, evidence, grounding_status="deterministic_rule")
+
+
+def _claim_from_refs(
+    text: str,
+    refs: list[str],
+    evidence: dict[str, Any],
+    *,
+    grounding_status: str,
+) -> ExplanationClaim:
+    clean_text = str(text).strip()
+    clean_refs = [ref for ref in refs[:16] if isinstance(ref, str) and ref.startswith("/")]
+    if not clean_text:
+        return ExplanationClaim(
+            text="",
+            evidence_refs=clean_refs,
+            refs_resolved=False,
+            grounding_status="unverified",
+            grounding_reason="empty_claim_text",
+        )
+    if not clean_refs:
+        return ExplanationClaim(
+            text=clean_text,
+            evidence_refs=[],
+            refs_resolved=False,
+            grounding_status="unverified",
+            grounding_reason="missing_evidence_refs",
+        )
+
+    values: dict[str, Any] = {}
+    for ref in clean_refs:
+        found, resolved = _resolve_json_pointer(evidence, ref)
+        if not found:
+            return ExplanationClaim(
+                text=clean_text,
+                evidence_refs=clean_refs,
+                refs_resolved=False,
+                grounding_status="unverified",
+                grounding_reason=f"unresolvable_ref:{ref}",
+            )
+        if isinstance(resolved, (dict, list)):
+            return ExplanationClaim(
+                text=clean_text,
+                evidence_refs=clean_refs,
+                refs_resolved=False,
+                grounding_status="unverified",
+                grounding_reason=f"container_ref:{ref}",
+            )
+        values[ref] = resolved
+    return ExplanationClaim(
+        text=clean_text,
+        evidence_refs=clean_refs,
+        refs_resolved=True,
+        grounding_status=grounding_status,
+        grounding_reason="refs_resolved",
+        authoritative_values=values,
+    )
+
+
+def _iter_json_pointer_paths(value: Any, prefix: str = "") -> set[str]:
+    paths: set[str] = set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{prefix}/{_escape_json_pointer(str(key))}"
+            paths.update(_iter_json_pointer_paths(child, child_path))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            child_path = f"{prefix}/{index}"
+            paths.update(_iter_json_pointer_paths(child, child_path))
+    elif prefix:
+        paths.add(prefix)
+    return paths
+
+
+def _log_rejected_claim(
+    claim: ExplanationClaim,
+    *,
+    evidence: dict[str, Any],
+    request_id: str | None,
+    section: str,
+) -> None:
+    log_event(
+        logger,
+        "llm_claim_ungrounded",
+        level=logging.WARNING,
+        request_id=request_id,
+        analysis_id=evidence.get("analysis_id"),
+        section=section,
+        reason=claim.grounding_reason,
+        evidence_refs=claim.evidence_refs,
+        claim_preview=claim.text[:120],
+    )
+
+
+def _resolve_json_pointer(value: Any, pointer: str) -> tuple[bool, Any]:
+    if not pointer.startswith("/"):
+        return False, None
+    current = value
+    for raw_part in pointer.lstrip("/").split("/"):
+        part = _unescape_json_pointer(raw_part)
+        if isinstance(current, dict):
+            if part not in current:
+                return False, None
+            current = current[part]
+        elif isinstance(current, list):
+            if not part.isdigit():
+                return False, None
+            index = int(part)
+            if index >= len(current):
+                return False, None
+            current = current[index]
+        else:
+            return False, None
+    return True, current
+
+
+def _escape_json_pointer(value: str) -> str:
+    return value.replace("~", "~0").replace("/", "~1")
+
+
+def _unescape_json_pointer(value: str) -> str:
+    return value.replace("~1", "/").replace("~0", "~")
 
 
 def _evidence_warnings(evidence: dict[str, Any]) -> list[str]:
@@ -813,10 +1203,3 @@ def _string_or(value: Any, fallback: str) -> str:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return fallback
-
-
-def _list_or(value: Any, fallback: list[str]) -> list[str]:
-    if not isinstance(value, list):
-        return fallback
-    strings = [str(item).strip() for item in value if str(item).strip()]
-    return strings[:8] if strings else fallback

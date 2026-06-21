@@ -13,6 +13,7 @@
   import { captureProbe } from "$lib/audio/recorder";
   import {
     buildAcousticReport,
+    buildDescriptors,
     buildDeviceValidation,
     compareAcousticReports,
     downloadAcousticReportJson,
@@ -178,7 +179,6 @@
 
   $: expectedSeconds =
     (config.pre_roll_ms + config.duration_ms + config.post_roll_ms) / 1000;
-  $: topPeak = result?.dsp.dominant_peaks[0] ?? null;
   $: activeSpectrogram =
     signalView === "mel"
       ? (result?.dsp.mel_spectrogram ?? null)
@@ -188,7 +188,8 @@
       ? (result?.dsp.matched_response ?? null)
       : (result?.dsp.impulse_response ?? null);
   $: validation = result ? buildDeviceValidation(result) : null;
-  $: dominantPeakNote = topPeak ? highQNote(topPeak.q_factor) : "";
+  $: descriptors = result ? buildDescriptors(result) : null;
+  $: dominantPeakNote = descriptors?.dominant_mode_note ?? "";
   $: reportComparison =
     comparisonReports.length >= 2
       ? compareAcousticReports(comparisonReports[0], comparisonReports[1])
@@ -257,55 +258,11 @@
     return "Info";
   }
 
-  function formatRoomCharacter(analysis: AnalysisResponse | null): string {
-    const rt60 = analysis?.dsp.decay.rt60_seconds;
-    if (rt60 === null || rt60 === undefined || !Number.isFinite(rt60)) {
-      return "--";
-    }
-    if (rt60 < 0.25) {
-      return "Dry";
-    }
-    if (rt60 > 0.75) {
-      return "Live";
-    }
-    return "Balanced";
-  }
-
-  function formatBrightness(analysis: AnalysisResponse | null): string {
-    const centroid = analysis?.dsp.fft.centroid_hz;
-    if (centroid === null || centroid === undefined || !Number.isFinite(centroid)) {
-      return "--";
-    }
-    if (centroid > 3500) {
-      return "Bright";
-    }
-    if (centroid < 1200) {
-      return "Dark";
-    }
-    return "Neutral";
-  }
-
-  function formatMode(analysis: AnalysisResponse | null): string {
-    const peak = analysis?.dsp.dominant_peaks[0];
-    if (!peak) {
-      return "--";
-    }
-    const q = peak.q_factor === null ? "" : `, ${formatQ(peak.q_factor)}`;
-    return `${formatHz(peak.frequency_hz)}${q}`;
-  }
-
   function formatQ(qFactor: number): string {
     if (qFactor > VERY_HIGH_Q_THRESHOLD) {
       return `Q >${VERY_HIGH_Q_THRESHOLD}`;
     }
     return `Q ${qFactor.toFixed(1)}`;
-  }
-
-  function highQNote(qFactor: number | null): string {
-    if (qFactor === null || qFactor <= VERY_HIGH_Q_THRESHOLD) {
-      return "";
-    }
-    return "Very narrow dominant peak; treat the Q proxy as device- and tonal-artifact-sensitive.";
   }
 
   function formatValidation(summary: DeviceValidationSummary | null): string {
@@ -336,7 +293,8 @@
       <div class="panel-header">
         <h1 class="panel-title">Room Acoustic Fingerprint</h1>
         <p class="panel-subtitle">
-          Chirp capture, impulse-envelope features, spectrograms, decay, and room-mode descriptors.
+          Chirp capture, impulse-envelope features, spectrograms, decay, and
+          room-mode descriptors.
         </p>
       </div>
 
@@ -456,7 +414,8 @@
       <div class="panel-header">
         <h2 class="panel-title">Acoustic Image</h2>
         <p class="panel-subtitle">
-          Captured waveform, frequency response, and time-frequency room fingerprint.
+          Captured waveform, frequency response, and time-frequency room
+          fingerprint.
         </p>
       </div>
 
@@ -546,21 +505,23 @@
         <div class="metric-grid">
           <div class="metric">
             <span>Room character</span>
-            <strong>{formatRoomCharacter(result)}</strong>
+            <strong>{descriptors?.room_character ?? "--"}</strong>
           </div>
           <div class="metric">
             <span>Brightness</span>
-            <strong>{formatBrightness(result)}</strong>
+            <strong>{descriptors?.brightness ?? "--"}</strong>
           </div>
           <div class="metric">
             <span>Dominant mode</span>
-            <strong>{formatMode(result)}</strong>
+            <strong>{descriptors?.dominant_mode ?? "--"}</strong>
           </div>
           <div class="metric">
             <span>Matched peak</span>
             <strong>
               {result
-                ? formatMilliseconds(result.dsp.matched_response.peak_time_seconds)
+                ? formatMilliseconds(
+                    result.dsp.matched_response.peak_time_seconds,
+                  )
                 : "--"}
             </strong>
           </div>
@@ -574,25 +535,37 @@
           </div>
           <div class="metric">
             <span>RT60 proxy</span>
-            <strong>{result ? formatSeconds(result.dsp.decay.rt60_seconds) : "--"}</strong>
+            <strong
+              >{result
+                ? formatSeconds(result.dsp.decay.rt60_seconds)
+                : "--"}</strong
+            >
           </div>
           <div class="metric">
             <span>Alignment</span>
             <strong>
-              {result ? `${(result.alignment.confidence ?? 0).toFixed(3)}` : "--"}
+              {result
+                ? `${(result.alignment.confidence ?? 0).toFixed(3)}`
+                : "--"}
             </strong>
           </div>
           <div class="metric">
             <span>SNR</span>
-            <strong>{result ? formatDb(result.dsp.signal_to_noise_db) : "--"}</strong>
+            <strong
+              >{result ? formatDb(result.dsp.signal_to_noise_db) : "--"}</strong
+            >
           </div>
           <div class="metric">
             <span>Centroid</span>
-            <strong>{result ? formatHz(result.dsp.fft.centroid_hz) : "--"}</strong>
+            <strong
+              >{result ? formatHz(result.dsp.fft.centroid_hz) : "--"}</strong
+            >
           </div>
           <div class="metric">
             <span>Rolloff</span>
-            <strong>{result ? formatHz(result.dsp.fft.rolloff_hz) : "--"}</strong>
+            <strong
+              >{result ? formatHz(result.dsp.fft.rolloff_hz) : "--"}</strong
+            >
           </div>
           <div class="metric">
             <span>Duration</span>
@@ -602,11 +575,15 @@
           </div>
           <div class="metric">
             <span>Sample rate</span>
-            <strong>{result ? `${result.audio.sample_rate_hz} Hz` : "--"}</strong>
+            <strong
+              >{result ? `${result.audio.sample_rate_hz} Hz` : "--"}</strong
+            >
           </div>
           <div class="metric">
             <span>Peak amplitude</span>
-            <strong>{result ? result.audio.peak_amplitude.toFixed(3) : "--"}</strong>
+            <strong
+              >{result ? result.audio.peak_amplitude.toFixed(3) : "--"}</strong
+            >
           </div>
           <div class="metric">
             <span>Warnings</span>
@@ -621,6 +598,19 @@
             <strong>{result?.dsp.mode_groups.length ?? "--"}</strong>
           </div>
         </div>
+
+        {#if descriptors?.room_character_counterfactual || descriptors?.brightness_counterfactual}
+          <ul class="notice-list" aria-label="Descriptor counterfactuals">
+            {#if descriptors.room_character_counterfactual}
+              <li>
+                Room character: {descriptors.room_character_counterfactual}
+              </li>
+            {/if}
+            {#if descriptors.brightness_counterfactual}
+              <li>Brightness: {descriptors.brightness_counterfactual}</li>
+            {/if}
+          </ul>
+        {/if}
 
         {#if result}
           <div class="report-block" aria-label="Acoustic report export">
@@ -728,6 +718,7 @@
                   <div>
                     <span>{check.label}</span>
                     <strong>{check.value}</strong>
+                    <small>{check.counterfactual ?? check.detail}</small>
                   </div>
                   <em>{validationTone(check.status)}</em>
                 </div>
@@ -778,19 +769,31 @@
             </div>
             <div class="result-row">
               <dt>Matched peak</dt>
-              <dd>{formatMilliseconds(result.dsp.matched_response.peak_time_seconds)}</dd>
+              <dd>
+                {formatMilliseconds(
+                  result.dsp.matched_response.peak_time_seconds,
+                )}
+              </dd>
             </div>
             <div class="result-row">
               <dt>Matched direct / late</dt>
-              <dd>{formatSignedDb(result.dsp.matched_response.direct_to_late_db)}</dd>
+              <dd>
+                {formatSignedDb(result.dsp.matched_response.direct_to_late_db)}
+              </dd>
             </div>
             <div class="result-row">
               <dt>Deconv peak</dt>
-              <dd>{formatMilliseconds(result.dsp.impulse_response.peak_time_seconds)}</dd>
+              <dd>
+                {formatMilliseconds(
+                  result.dsp.impulse_response.peak_time_seconds,
+                )}
+              </dd>
             </div>
             <div class="result-row">
               <dt>Deconv direct / late</dt>
-              <dd>{formatSignedDb(result.dsp.impulse_response.direct_to_late_db)}</dd>
+              <dd>
+                {formatSignedDb(result.dsp.impulse_response.direct_to_late_db)}
+              </dd>
             </div>
           </dl>
 
@@ -838,7 +841,9 @@
                   </span>
                   <strong>
                     {formatHz(group.center_hz)}
-                    {group.q_factor === null ? "" : `, ${formatQ(group.q_factor)}`}
+                    {group.q_factor === null
+                      ? ""
+                      : `, ${formatQ(group.q_factor)}`}
                   </strong>
                 </div>
               {/each}
@@ -856,7 +861,10 @@
             <div class="transfer-list" aria-label="Decay bands">
               {#each result.dsp.decay_bands as band}
                 <div class="transfer-row">
-                  <span>{band.label} {formatHz(band.start_hz)}-{formatHz(band.end_hz)}</span>
+                  <span
+                    >{band.label}
+                    {formatHz(band.start_hz)}-{formatHz(band.end_hz)}</span
+                  >
                   <strong>
                     {formatSeconds(band.rt60_seconds)}
                     {band.fit_r2 === null ? "" : ` / ${band.fit_r2.toFixed(2)}`}
