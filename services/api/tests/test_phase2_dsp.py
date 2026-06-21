@@ -11,6 +11,7 @@ from resonancelab.dsp import (
     ChirpSpec,
     analyze_chirp_response,
     apply_fft_bandpass,
+    compute_impulse_response,
     compute_transfer_response,
     estimate_decay,
     find_dominant_peaks,
@@ -104,6 +105,13 @@ class Phase2DspGoldenTests(unittest.TestCase):
         self.assertIsNotNone(analysis.decay.decay_rate_per_second)
         self.assertGreater(analysis.decay.decay_rate_per_second or 0.0, 2.0)
         self.assertLess(analysis.decay.rt60_seconds or 999.0, 2.0)
+        self.assertGreater(len(analysis.impulse_response.times_seconds), 10)
+        self.assertEqual(
+            len(analysis.impulse_response.times_seconds),
+            len(analysis.impulse_response.magnitude_db),
+        )
+        self.assertEqual({band.label for band in analysis.decay_bands}, {"low", "mid", "high"})
+        self.assertTrue(any(band.rt60_seconds is not None for band in analysis.decay_bands))
 
     def test_recorded_style_wav_fixture_exercises_colored_probe(self) -> None:
         fixture = json.loads((FIXTURES_DIR / "phase2_recorded_style_probe.json").read_text())
@@ -242,6 +250,61 @@ class Phase2DspGoldenTests(unittest.TestCase):
         self.assertTrue(all(math.isfinite(value) for value in in_band_means))
         self.assertLess(max(abs(value + 6.0) for value in in_band_means), 3.0)
 
+    def test_impulse_proxy_is_compact_normalized_deconvolution(self) -> None:
+        reference = generate_log_chirp(GOLDEN_CHIRP, SAMPLE_RATE_HZ)
+        captured = np.zeros(reference.size + int(round(0.10 * SAMPLE_RATE_HZ)))
+        captured[16 : 16 + reference.size] += reference
+
+        analysis = analyze_chirp_response(
+            captured,
+            SAMPLE_RATE_HZ,
+            GOLDEN_CHIRP,
+            pre_roll_seconds=0.0,
+            post_roll_seconds=0.10,
+        )
+
+        trace = analysis.impulse_response
+        self.assertEqual(trace.method, "regularized_deconvolution")
+        self.assertLessEqual(len(trace.times_seconds), 192)
+        self.assertEqual(len(trace.times_seconds), len(trace.magnitude_db))
+        self.assertAlmostEqual(max(trace.magnitude_db), 0.0, places=6)
+
+    def test_impulse_proxy_recovers_delayed_linear_response(self) -> None:
+        reference = generate_log_chirp(GOLDEN_CHIRP, SAMPLE_RATE_HZ)
+        delay_seconds = 0.014
+        reflection_seconds = 0.062
+        delay_samples = int(round(delay_seconds * SAMPLE_RATE_HZ))
+        reflection_samples = int(round(reflection_seconds * SAMPLE_RATE_HZ))
+        captured = np.zeros(reference.size + int(round(0.16 * SAMPLE_RATE_HZ)))
+        captured[delay_samples : delay_samples + reference.size] += reference
+        captured[reflection_samples : reflection_samples + reference.size] += 0.35 * reference[
+            : captured.size - reflection_samples
+        ]
+
+        trace = compute_impulse_response(
+            captured,
+            reference,
+            SAMPLE_RATE_HZ,
+            max_seconds=0.12,
+            max_points=192,
+        )
+
+        self.assertGreater(len(trace.times_seconds), 20)
+        peak_index = int(np.argmax(trace.magnitude_db))
+        self.assertAlmostEqual(trace.times_seconds[peak_index], delay_seconds, delta=0.003)
+        self.assertAlmostEqual(max(trace.magnitude_db), 0.0, places=6)
+        self.assertTrue(all(math.isfinite(value) for value in trace.magnitude_db))
+
+    def test_impulse_proxy_returns_empty_for_zero_energy_reference(self) -> None:
+        trace = compute_impulse_response(
+            np.ones(256, dtype=np.float64),
+            np.zeros(128, dtype=np.float64),
+            SAMPLE_RATE_HZ,
+        )
+
+        self.assertEqual(trace.times_seconds, [])
+        self.assertEqual(trace.magnitude_db, [])
+
     def test_decay_window_start_uses_fallback_slice_start(self) -> None:
         reference = generate_log_chirp(GOLDEN_CHIRP, SAMPLE_RATE_HZ)
         expected_start = int(round(PRE_ROLL_SECONDS * SAMPLE_RATE_HZ))
@@ -321,6 +384,31 @@ class Phase2DspGoldenTests(unittest.TestCase):
         self.assertAlmostEqual(peaks[0].frequency_hz, frequency_hz, delta=8.0)
         self.assertIsNotNone(decay.decay_rate_per_second)
         self.assertAlmostEqual(decay.decay_rate_per_second or 0.0, decay_rate, delta=0.55)
+
+    def test_decay_estimate_is_stable_under_moderate_noise(self) -> None:
+        frequency_hz = 1240.0
+        decay_rate = 4.0
+        time = np.arange(int(0.85 * SAMPLE_RATE_HZ), dtype=np.float64) / SAMPLE_RATE_HZ
+        clean = 0.26 * np.exp(-decay_rate * time) * np.sin(2.0 * math.pi * frequency_hz * time)
+
+        estimates: list[float] = []
+        for seed in range(5):
+            noise = np.random.default_rng(seed).normal(0.0, 0.0018, size=time.size)
+            decay = estimate_decay(clean + noise, SAMPLE_RATE_HZ, window_start_seconds=0.0)
+            self.assertIsNotNone(decay.decay_rate_per_second)
+            estimates.append(decay.decay_rate_per_second or 0.0)
+
+        self.assertLess(max(abs(value - decay_rate) for value in estimates), 0.9)
+
+    def test_decay_estimate_rejects_low_dynamic_range_tail(self) -> None:
+        time = np.arange(int(0.8 * SAMPLE_RATE_HZ), dtype=np.float64) / SAMPLE_RATE_HZ
+        barely_decaying = 0.04 * np.exp(-0.25 * time) * np.sin(2.0 * math.pi * 1000.0 * time)
+
+        decay = estimate_decay(barely_decaying, SAMPLE_RATE_HZ, window_start_seconds=0.0)
+
+        self.assertIsNone(decay.decay_rate_per_second)
+        self.assertIsNone(decay.rt60_seconds)
+        self.assertIsNone(decay.fit_r2)
 
     def test_parabolic_peak_interpolation_recovers_non_bin_tone(self) -> None:
         frequency_hz = 1375.37

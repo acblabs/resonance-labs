@@ -33,7 +33,7 @@ For project context and repository layout details, refer to the root README, FEA
     $$x(t) = A \sin \left( 2\pi f_0 \frac{k^t - 1}{\ln k} \right)$$
     where $k = (f_1 / f_0)^{1/T}$, $f_0$ is start frequency, $f_1$ is end frequency, and $T$ is duration.
 *   **Matched Filtering**: Use cross-correlation with the emitted sweep for time alignment and impulse-like response views.
-*   **Deconvolution**: Use regularized complex frequency-domain division when estimating transfer or impulse proxies. Keep the regularization value visible in code/tests and avoid division by tiny reference bins.
+*   **Deconvolution**: Use regularized complex frequency-domain division when estimating transfer or impulse-envelope proxies. Keep the regularization value visible in code/tests and avoid division by tiny reference bins. Impulse-envelope traces should use linear zero-padded deconvolution, local envelope extraction before compaction, and framing as comparison features rather than spatial reconstructions.
 
 ### 2.2 Spectral Estimation & Sub-Bin Peak Detection
 
@@ -67,6 +67,8 @@ For each probe, extract and report:
 *   STFT and mel-spectrogram grids.
 *   Dominant peak frequencies, prominence, and Q-factor.
 *   RMS-envelope decay rate, RT60 proxy, and fit quality.
+*   Low, mid, and high band-limited decay estimates for controlled repeat comparisons, with filter-ringing caveats.
+*   Compact regularized impulse-envelope proxy for report visualization.
 *   Caveats for low SNR, weak alignment, forced browser processing, or unstable decay.
 
 ---
@@ -77,5 +79,5 @@ For each probe, extract and report:
 *   **Golden Tests**: Preserve tests for matched-filter alignment, FFT-domain bandpass attenuation, spectrogram dimensions, dominant peak detection, decay-fit edge cases, and the committed recorded-style WAV fixture.
 *   **Analytic Checks**: Maintain at least one closed-form damped-sinusoid regression test for peak frequency and exponential decay-rate recovery.
 *   **Real Fixtures**: Add small real room recordings only with metadata, tolerances, and clear caveats.
-*   **Report Fixtures**: Prefer reviewed JSON acoustic reports as public fixtures before committing raw audio; validate manifests for repeat, position, and room coverage.
+*   **Report Fixtures**: Prefer reviewed JSON acoustic reports as public fixtures before committing raw audio; validate manifests for repeat, position, and room coverage. Compare repeat reports locally before using them for product claims.
 *   **LLM Boundary**: A lab-assistant model may explain compact structured DSP summaries, but raw WAV and full high-dimensional grids must not be sent to the hosted path by default.

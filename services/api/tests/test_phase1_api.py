@@ -160,6 +160,9 @@ class Phase1ApiTests(unittest.TestCase):
         self.assertGreater(len(payload["dsp"]["stft"]["magnitude_db"]), 0)
         self.assertGreater(len(payload["dsp"]["mel_spectrogram"]["magnitude_db"]), 0)
         self.assertGreater(len(payload["dsp"]["transfer_response"]), 0)
+        self.assertEqual(payload["dsp"]["impulse_response"]["method"], "regularized_deconvolution")
+        self.assertGreater(len(payload["dsp"]["impulse_response"]["magnitude_db"]), 0)
+        self.assertGreater(len(payload["dsp"]["decay_bands"]), 0)
 
     def test_analyze_rejects_probe_above_wav_nyquist(self) -> None:
         metadata = _probe_metadata()

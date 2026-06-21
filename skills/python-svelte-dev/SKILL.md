@@ -31,7 +31,7 @@ For project context and repository layout details, refer to the root README, FEA
 *   **SSR Safety**: Web Audio, media devices, and storage APIs do not exist during SSR. Browser-specific code belongs in `onMount` or behind `$app/environment` `browser` guards.
 *   **Target Routing Layout**:
     *   `/lab`: Main room acoustic fingerprint workflow.
-    *   `/physics`: Future deeper explorer for FFT, spectrogram, impulse proxy, and decay analysis.
+    *   `/physics`: Future deeper explorer for FFT, spectrogram, impulse-envelope proxy, and decay analysis.
 
 ### 1.3 UI/UX Design System Principles
 
@@ -39,12 +39,13 @@ For project context and repository layout details, refer to the root README, FEA
 *   **No Static Signal Placeholders**: Render waveforms and spectrograms dynamically with Canvas.
 *   **Room Fingerprint First**: Show the usable measurement experience immediately; do not turn the app into a marketing landing page.
 *   **Report Export**: Keep JSON and PNG acoustic reports based on derived analysis data. Do not include raw WAV bytes or PCM samples in report exports.
+*   **Report Comparison**: Compare exported JSON reports locally in the browser. Surface metric deltas, transfer-band deltas, and capture-condition caveats before encouraging fixture publication.
 *   **Honest Wording**: Describe outputs as acoustic fingerprints and reports, not spatial images or geometry reconstruction.
 
 ### 1.4 State Management & Safety Guardrails
 
 *   **Local State**: Keep transient probe state in Svelte component state. Store durable derived reports only when the user explicitly asks for export.
-*   **Run Validation**: Surface alignment, SNR, duration, sample-rate, peak-amplitude, capture-path, browser-processing, and decay-fit checks as quality signals.
+*   **Run Validation**: Surface alignment, SNR, duration, sample-rate, peak-amplitude, capture-path, browser-processing, decay-fit checks, and band-limited decay diagnostics as quality signals.
 *   **Download Robustness**: Defer object URL cleanup after report download clicks so large PNG exports are not cancelled by strict browsers.
 *   **LLM Explanation Boundary**: Explanations must call `/api/v1/explain` with compact analysis JSON only. Do not upload the WAV blob to an LLM provider. Keep hosted calls disabled by default and use Cloud Run service identity/IAM for Vertex Gemini instead of API keys.
 *   **Acoustic Safety**: Cap the amplitude multiplier to `0.35` by default, keep chirps short, fade the signal, and keep the no-headphones warning visible.
@@ -71,7 +72,7 @@ For project context and repository layout details, refer to the root README, FEA
 ## 3. Testing & Validation
 
 *   **Frontend Test Patterns**: Test chirp generation, WAV encoding, audio state transitions, and rendering helpers with mocked browser APIs.
-*   **Golden Audio Fixtures**: Preserve deterministic generated fixtures and add small real room fixtures with tolerant assertions when available.
+*   **Golden Audio Fixtures**: Preserve deterministic generated fixtures and add small real room fixtures with tolerant assertions when available. Prefer reviewed JSON report fixtures and local comparison before publishing.
 *   **API Tests**: Keep `/api/v1/analyze` and `/api/v1/explain` schema tests grounded in compact DSP evidence.
 
 ---

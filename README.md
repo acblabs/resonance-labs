@@ -17,10 +17,11 @@ Implemented:
 - Upload validation for size, content type, WAV structure, sample rate, duration, RMS, peak amplitude, and DC offset.
 - Matched-filter chirp alignment with detected/expected chirp timing.
 - FFT-domain bandpass filtering, spectral descriptors, dominant peak detection, Q-factor proxy, STFT, mel-spectrogram, transfer-response bands, RMS-envelope decay, and RT60 proxy.
+- Regularized impulse-envelope proxy and low/mid/high decay-band summaries for report comparison.
 - Browser views for waveform, FFT, STFT, and mel-spectrogram.
 - Room descriptors for dry/live character, brightness, dominant mode, SNR, alignment, centroid, rolloff, and warnings.
 - Run-quality validation for alignment, SNR, duration, sample rate, peak amplitude, capture path, browser processing, and decay fit, with required checks weighted above advisory checks.
-- Exportable JSON and PNG acoustic reports from the Lab UI.
+- Exportable JSON and PNG acoustic reports from the Lab UI, plus browser-local side-by-side comparison of exported JSON reports.
 - Deterministic `/api/v1/explain` fallback plus optional Gemini lab-assistant integration over compact structured DSP evidence only.
 - Public-safe real-room fixture manifest validation for reviewed report exports, including privacy-key checks and non-failing repeat coverage.
 - Docker Compose for the web/API pair.
@@ -32,7 +33,7 @@ Still manual:
 - Real-device Android Chrome and iOS Safari validation.
 - HTTPS mobile testing outside localhost.
 - Real-room fixture collection across devices, browsers, positions, and rooms.
-- Polished PNG/acoustic report export.
+- Visual review of exported report comparisons from real device captures.
 
 ## Quickstart
 

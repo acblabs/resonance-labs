@@ -6,6 +6,10 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Added
 
+- Compact zero-padded regularized impulse-envelope proxy in `/api/v1/analyze`, report exports, and DSP regression tests.
+- More conservative low/mid/high band-limited decay estimates for controlled repeat comparisons and report visualization.
+- Browser-local comparison of two exported JSON acoustic reports, including metric deltas, transfer-band deltas, and capture-condition caveats.
+- Polished PNG report panels for capture metadata, impulse-envelope proxy, and decay-band summaries.
 - Lab UI JSON and PNG acoustic report export with derived DSP evidence, validation checks, descriptors, caveats, and optional explanation output.
 - Device run-quality validation for alignment, SNR, duration, sample rate, peak amplitude, capture path, browser processing, and decay fit.
 - Weighted validation scoring, high-Q proxy caveats, deferred report-download URL cleanup, and ellipsis-aware PNG text wrapping.

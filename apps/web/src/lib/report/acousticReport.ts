@@ -48,8 +48,32 @@ export type AcousticReport = {
   caveats: string[];
 };
 
+export type AcousticReportComparisonMetric = {
+  id: string;
+  label: string;
+  first: string;
+  second: string;
+  delta: string;
+};
+
+export type TransferBandComparison = {
+  label: string;
+  first: string;
+  second: string;
+  delta: string;
+};
+
+export type AcousticReportComparison = {
+  first_id: string;
+  second_id: string;
+  same_capture_condition: boolean;
+  metrics: AcousticReportComparisonMetric[];
+  transfer_bands: TransferBandComparison[];
+  caveats: string[];
+};
+
 const EXPORT_WIDTH = 1600;
-const EXPORT_HEIGHT = 1180;
+const EXPORT_HEIGHT = 1380;
 const MISSING = "--";
 const VERY_HIGH_Q_THRESHOLD = 300;
 const REQUIRED_CHECK_WEIGHT = 2;
@@ -76,6 +100,88 @@ export function buildAcousticReport(
       "Raw PCM data and WAV bytes are not included in this report export.",
       ...buildAnalysisCaveats(analysis),
     ],
+  };
+}
+
+export function parseAcousticReportPayload(payload: unknown): AcousticReport {
+  if (!isRecord(payload)) {
+    throw new Error("Report JSON must contain an object.");
+  }
+  if (payload.schema_version !== "resonancelab.acoustic_report.v1") {
+    throw new Error("Report JSON is not a ResonanceLab acoustic report.");
+  }
+  if (!isRecord(payload.analysis) || typeof payload.analysis_id !== "string") {
+    throw new Error("Report JSON is missing analysis data.");
+  }
+  return payload as AcousticReport;
+}
+
+export function compareAcousticReports(
+  first: AcousticReport,
+  second: AcousticReport,
+): AcousticReportComparison {
+  const firstAnalysis = first.analysis;
+  const secondAnalysis = second.analysis;
+  const caveats = comparisonCaveats(first, second);
+  return {
+    first_id: first.analysis_id,
+    second_id: second.analysis_id,
+    same_capture_condition: caveats.length === 0,
+    metrics: [
+      comparisonMetric({
+        id: "run_quality",
+        label: "Run quality",
+        first: first.validation.score,
+        second: second.validation.score,
+        formatter: (value) =>
+          value === null || value === undefined
+            ? MISSING
+            : `${Math.round(value * 100)}%`,
+        deltaFormatter: (value) => `${formatSigned(value * 100, 0)} pp`,
+      }),
+      comparisonMetric({
+        id: "alignment",
+        label: "Alignment",
+        first: firstAnalysis.alignment.confidence,
+        second: secondAnalysis.alignment.confidence,
+        formatter: (value) =>
+          value === null || value === undefined ? MISSING : value.toFixed(3),
+      }),
+      comparisonMetric({
+        id: "snr",
+        label: "SNR",
+        first: firstAnalysis.dsp.signal_to_noise_db,
+        second: secondAnalysis.dsp.signal_to_noise_db,
+        formatter: formatDb,
+        deltaFormatter: (value) => formatSigned(value, 1, " dB"),
+      }),
+      comparisonMetric({
+        id: "rt60",
+        label: "RT60 proxy",
+        first: firstAnalysis.dsp.decay.rt60_seconds,
+        second: secondAnalysis.dsp.decay.rt60_seconds,
+        formatter: formatSeconds,
+        deltaFormatter: (value) => formatSigned(value, 3, " s"),
+      }),
+      comparisonMetric({
+        id: "centroid",
+        label: "Centroid",
+        first: firstAnalysis.dsp.fft.centroid_hz,
+        second: secondAnalysis.dsp.fft.centroid_hz,
+        formatter: formatHz,
+        deltaFormatter: (value) => formatSigned(value, 0, " Hz"),
+      }),
+      comparisonMetric({
+        id: "dominant_mode",
+        label: "Dominant mode",
+        first: first.descriptors.dominant_mode_hz,
+        second: second.descriptors.dominant_mode_hz,
+        formatter: formatHz,
+        deltaFormatter: (value) => formatSigned(value, 0, " Hz"),
+      }),
+    ],
+    transfer_bands: compareTransferBands(firstAnalysis, secondAnalysis),
+    caveats,
   };
 }
 
@@ -219,6 +325,7 @@ function drawReport(
   context.fillStyle = "#9fb0aa";
   context.fillText(`Analysis ${report.analysis_id}`, 48, 92);
   context.fillText(new Date(report.generated_at).toLocaleString(), 48, 116);
+  context.fillText(reportMetadataLine(report), 430, 116);
 
   const statusColor = statusColorFor(report.validation.status);
   roundedRect(context, 1250, 42, 300, 84, 8, "#151c1a", "#32423d");
@@ -227,7 +334,7 @@ function drawReport(
   context.fillText(report.validation.status.toUpperCase(), 1274, 82);
   context.fillStyle = "#9fb0aa";
   context.font = "600 15px Inter, Segoe UI, sans-serif";
-    context.fillText(
+  context.fillText(
     `Run quality ${Math.round(report.validation.score * 100)}%`,
     1274,
     108,
@@ -235,10 +342,13 @@ function drawReport(
 
   drawMetricCards(context, report);
   drawSpectrogramPanel(context, report);
+  drawImpulseResponsePanel(context, report);
   drawTransferPanel(context, report);
+  drawDecayBandsPanel(context, report);
   drawPeaksPanel(context, report);
   drawValidationPanel(context, report);
   drawCaveatsPanel(context, report);
+  drawFooter(context);
 }
 
 function drawMetricCards(
@@ -279,7 +389,7 @@ function drawSpectrogramPanel(
   context: CanvasRenderingContext2D,
   report: AcousticReport,
 ): void {
-  const panel = { x: 48, y: 360, width: 920, height: 430 };
+  const panel = { x: 48, y: 360, width: 920, height: 360 };
   roundedRect(
     context,
     panel.x,
@@ -303,11 +413,62 @@ function drawSpectrogramPanel(
   );
 }
 
+function drawImpulseResponsePanel(
+  context: CanvasRenderingContext2D,
+  report: AcousticReport,
+): void {
+  const panel = { x: 48, y: 744, width: 920, height: 170 };
+  roundedRect(
+    context,
+    panel.x,
+    panel.y,
+    panel.width,
+    panel.height,
+    8,
+    "#151c1a",
+    "#32423d",
+  );
+  drawPanelTitle(context, "Impulse envelope", panel.x, panel.y);
+
+  const trace = report.analysis.dsp.impulse_response;
+  if (!trace?.times_seconds?.length || !trace.magnitude_db.length) {
+    drawEmpty(
+      context,
+      "No impulse envelope available.",
+      panel.x + 24,
+      panel.y + 74,
+    );
+    return;
+  }
+
+  drawLineTrace(
+    context,
+    trace.times_seconds,
+    trace.magnitude_db,
+    panel.x + 24,
+    panel.y + 64,
+    panel.width - 48,
+    panel.height - 104,
+    { minY: -96, maxY: 0, stroke: "#58b9d1" },
+  );
+  context.fillStyle = "#9fb0aa";
+  context.font = "600 12px Inter, Segoe UI, sans-serif";
+  context.fillText("0 dB", panel.x + 24, panel.y + 58);
+  context.fillText("-96 dB", panel.x + 24, panel.y + panel.height - 22);
+  context.textAlign = "right";
+  context.fillText(
+    `${Math.round((trace.times_seconds.at(-1) ?? 0) * 1000)} ms`,
+    panel.x + panel.width - 24,
+    panel.y + panel.height - 22,
+  );
+  context.textAlign = "left";
+}
+
 function drawTransferPanel(
   context: CanvasRenderingContext2D,
   report: AcousticReport,
 ): void {
-  const panel = { x: 1000, y: 360, width: 552, height: 270 };
+  const panel = { x: 1000, y: 360, width: 552, height: 250 };
   roundedRect(
     context,
     panel.x,
@@ -360,11 +521,67 @@ function drawTransferPanel(
   });
 }
 
+function drawDecayBandsPanel(
+  context: CanvasRenderingContext2D,
+  report: AcousticReport,
+): void {
+  const panel = { x: 1000, y: 636, width: 552, height: 170 };
+  roundedRect(
+    context,
+    panel.x,
+    panel.y,
+    panel.width,
+    panel.height,
+    8,
+    "#151c1a",
+    "#32423d",
+  );
+  drawPanelTitle(context, "Decay bands", panel.x, panel.y);
+
+  const bands = report.analysis.dsp.decay_bands ?? [];
+  if (!bands.length) {
+    drawEmpty(context, "No band-limited decay available.", panel.x + 24, panel.y + 74);
+    return;
+  }
+  const rt60Values = bands
+    .map((band) => band.rt60_seconds)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  const maxRt60 = Math.max(...rt60Values, 0.1);
+  bands.forEach((band, index) => {
+    const y = panel.y + 70 + index * 32;
+    const rt60 = band.rt60_seconds;
+    const normalized = rt60 === null ? 0 : Math.max(0.04, Math.min(1, rt60 / maxRt60));
+    context.fillStyle = "#9fb0aa";
+    context.font = "700 13px Inter, Segoe UI, sans-serif";
+    context.fillText(
+      `${band.label.toUpperCase()} ${formatHz(band.start_hz)}-${formatHz(band.end_hz)}`,
+      panel.x + 24,
+      y,
+    );
+    roundedRect(context, panel.x + 214, y - 13, 210, 11, 6, "#24312d");
+    if (rt60 !== null) {
+      roundedRect(
+        context,
+        panel.x + 214,
+        y - 13,
+        normalized * 210,
+        11,
+        6,
+        "#58b9d1",
+      );
+    }
+    context.fillStyle = "#e7f0ea";
+    context.textAlign = "right";
+    context.fillText(formatSeconds(rt60), panel.x + panel.width - 24, y);
+    context.textAlign = "left";
+  });
+}
+
 function drawPeaksPanel(
   context: CanvasRenderingContext2D,
   report: AcousticReport,
 ): void {
-  const panel = { x: 1000, y: 656, width: 552, height: 214 };
+  const panel = { x: 1000, y: 832, width: 552, height: 214 };
   roundedRect(
     context,
     panel.x,
@@ -413,7 +630,7 @@ function drawValidationPanel(
   context: CanvasRenderingContext2D,
   report: AcousticReport,
 ): void {
-  const panel = { x: 48, y: 820, width: 920, height: 288 };
+  const panel = { x: 48, y: 938, width: 920, height: 330 };
   roundedRect(
     context,
     panel.x,
@@ -456,7 +673,7 @@ function drawCaveatsPanel(
   context: CanvasRenderingContext2D,
   report: AcousticReport,
 ): void {
-  const panel = { x: 1000, y: 896, width: 552, height: 212 };
+  const panel = { x: 1000, y: 1072, width: 552, height: 236 };
   roundedRect(
     context,
     panel.x,
@@ -533,6 +750,177 @@ function drawSpectrogram(
     y + height + 20,
   );
   context.textAlign = "left";
+}
+
+function drawLineTrace(
+  context: CanvasRenderingContext2D,
+  xValues: number[],
+  yValues: number[],
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  options: { minY: number; maxY: number; stroke: string },
+): void {
+  const finitePairs = xValues
+    .map((xValue, index) => ({ xValue, yValue: yValues[index] }))
+    .filter(
+      (pair) => Number.isFinite(pair.xValue) && Number.isFinite(pair.yValue),
+    );
+  if (finitePairs.length < 2) {
+    drawEmpty(context, "Trace is too short to draw.", x, y + 28);
+    return;
+  }
+
+  const minX = finitePairs[0].xValue;
+  const maxX = finitePairs.at(-1)?.xValue ?? minX;
+  if (maxX <= minX || options.maxY <= options.minY) {
+    drawEmpty(context, "Trace range is not drawable.", x, y + 28);
+    return;
+  }
+
+  context.strokeStyle = "#24312d";
+  context.lineWidth = 1;
+  for (let tick = 0; tick <= 4; tick += 1) {
+    const tickY = y + (tick / 4) * height;
+    context.beginPath();
+    context.moveTo(x, tickY);
+    context.lineTo(x + width, tickY);
+    context.stroke();
+  }
+
+  context.strokeStyle = options.stroke;
+  context.lineWidth = 2;
+  context.beginPath();
+  finitePairs.forEach((pair, index) => {
+    const pointX = x + normalize(pair.xValue, minX, maxX) * width;
+    const pointY =
+      y +
+      (1 - normalize(pair.yValue, options.minY, options.maxY)) * height;
+    if (index === 0) {
+      context.moveTo(pointX, pointY);
+    } else {
+      context.lineTo(pointX, pointY);
+    }
+  });
+  context.stroke();
+  context.strokeStyle = "#32423d";
+  context.strokeRect(x, y, width, height);
+}
+
+function drawFooter(context: CanvasRenderingContext2D): void {
+  context.fillStyle = "#9fb0aa";
+  context.font = "600 12px Inter, Segoe UI, sans-serif";
+  context.fillText(
+    "Single speaker/microphone captures are acoustic fingerprints, not room geometry or spatial reconstructions.",
+    48,
+    EXPORT_HEIGHT - 34,
+  );
+}
+
+function reportMetadataLine(report: AcousticReport): string {
+  const config = report.analysis.probe.probe_config;
+  return [
+    `${report.analysis.audio.sample_rate_hz} Hz`,
+    report.analysis.probe.browser.capture_path,
+    `${formatHz(config.start_hz)}-${formatHz(config.end_hz)}`,
+    `${config.duration_ms} ms chirp`,
+  ].join(" | ");
+}
+
+function comparisonMetric({
+  id,
+  label,
+  first,
+  second,
+  formatter,
+  deltaFormatter,
+}: {
+  id: string;
+  label: string;
+  first: number | null;
+  second: number | null;
+  formatter: (value: number | null | undefined) => string;
+  deltaFormatter?: (delta: number) => string;
+}): AcousticReportComparisonMetric {
+  const delta =
+    first === null ||
+    second === null ||
+    !Number.isFinite(first) ||
+    !Number.isFinite(second)
+      ? null
+      : second - first;
+  return {
+    id,
+    label,
+    first: formatter(first),
+    second: formatter(second),
+    delta: delta === null ? MISSING : (deltaFormatter ?? formatSigned)(delta),
+  };
+}
+
+function compareTransferBands(
+  first: AnalysisResponse,
+  second: AnalysisResponse,
+): TransferBandComparison[] {
+  const secondBands = new Map(
+    second.dsp.transfer_response.map((band) => [transferBandKey(band), band]),
+  );
+  return first.dsp.transfer_response
+    .map((firstBand) => {
+      const secondBand = secondBands.get(transferBandKey(firstBand));
+      if (!secondBand) {
+        return null;
+      }
+      return {
+        label: `${formatHz(firstBand.start_hz)}-${formatHz(firstBand.end_hz)}`,
+        first: formatDb(firstBand.mean_db),
+        second: formatDb(secondBand.mean_db),
+        delta: formatSigned(secondBand.mean_db - firstBand.mean_db, 1, " dB"),
+      };
+    })
+    .filter((value): value is TransferBandComparison => value !== null);
+}
+
+function transferBandKey(band: {
+  start_hz: number;
+  end_hz: number;
+}): string {
+  return `${Math.round(band.start_hz)}-${Math.round(band.end_hz)}`;
+}
+
+function comparisonCaveats(
+  first: AcousticReport,
+  second: AcousticReport,
+): string[] {
+  const caveats: string[] = [];
+  const firstProbe = first.analysis.probe;
+  const secondProbe = second.analysis.probe;
+  if (
+    first.analysis.audio.sample_rate_hz !== second.analysis.audio.sample_rate_hz
+  ) {
+    caveats.push("Sample rates differ; compare spectral and decay values cautiously.");
+  }
+  if (firstProbe.browser.capture_path !== secondProbe.browser.capture_path) {
+    caveats.push("Capture paths differ; AudioWorklet and fallback paths can shape results.");
+  }
+  if (
+    firstProbe.browser.user_agent &&
+    secondProbe.browser.user_agent &&
+    firstProbe.browser.user_agent !== secondProbe.browser.user_agent
+  ) {
+    caveats.push("Browser or device user-agent strings differ.");
+  }
+  const firstConfig = JSON.stringify(firstProbe.probe_config);
+  const secondConfig = JSON.stringify(secondProbe.probe_config);
+  if (firstConfig !== secondConfig) {
+    caveats.push("Probe configuration differs; repeatability comparisons need matching chirps.");
+  }
+  return caveats;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function statusAtLeast({
@@ -698,6 +1086,8 @@ function decayFitCheck(
 function buildMethodNotes(): string[] {
   return [
     "Transfer-response bands are regularized driven-path summaries computed from the aligned chirp plus available ring-down; values are not calibrated room transfer functions.",
+    "The impulse envelope is a compact, zero-padded regularized deconvolution envelope normalized for comparison, not a spatial room reconstruction.",
+    "Low, mid, and high decay bands reuse the post-chirp window and should be compared only across controlled repeat captures.",
     "STFT and mel grids are compact UI/export visualizations, not high-resolution analysis arrays.",
     "Q factor is a half-power bandwidth proxy and can be inflated by narrow tonal, browser, or device artifacts.",
   ];
@@ -811,6 +1201,14 @@ function formatSeconds(value: number | null | undefined): string {
     return MISSING;
   }
   return `${value.toFixed(3)} s`;
+}
+
+function formatSigned(value: number, digits = 3, suffix = ""): string {
+  if (!Number.isFinite(value)) {
+    return MISSING;
+  }
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(digits)}${suffix}`;
 }
 
 function round(value: number, digits: number): number {

@@ -19,11 +19,13 @@ from app.schemas import (
     AlignmentMetadata,
     AnalysisResponse,
     AudioUploadMetrics,
+    DecayBandFeature,
     DecayFeature,
     DspAnalysis,
     FrequencySeries,
     PeakFeature,
     ProbeMetadata,
+    ResponseTrace,
     SpectralFeatures,
     SpectrogramGrid,
     TransferBandFeature,
@@ -256,6 +258,12 @@ def _dsp_response(analysis: ChirpDspAnalysis) -> DspAnalysis:
             )
             for band in analysis.transfer_response
         ],
+        impulse_response=ResponseTrace(
+            method=analysis.impulse_response.method,
+            times_seconds=analysis.impulse_response.times_seconds,
+            magnitude_db=analysis.impulse_response.magnitude_db,
+            regularization=analysis.impulse_response.regularization,
+        ),
         dominant_peaks=[
             PeakFeature(
                 frequency_hz=peak.frequency_hz,
@@ -273,4 +281,15 @@ def _dsp_response(analysis: ChirpDspAnalysis) -> DspAnalysis:
             window_start_seconds=analysis.decay.window_start_seconds,
             window_end_seconds=analysis.decay.window_end_seconds,
         ),
+        decay_bands=[
+            DecayBandFeature(
+                label=band.label,
+                start_hz=band.start_hz,
+                end_hz=band.end_hz,
+                decay_rate_per_second=band.decay_rate_per_second,
+                rt60_seconds=band.rt60_seconds,
+                fit_r2=band.fit_r2,
+            )
+            for band in analysis.decay_bands
+        ],
     )

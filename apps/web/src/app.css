@@ -397,6 +397,83 @@ button {
   padding: 0.85rem;
 }
 
+.comparison-block {
+  display: grid;
+  gap: 0.65rem;
+  border-top: 1px solid rgba(50, 66, 61, 0.65);
+  padding-top: 0.8rem;
+}
+
+.file-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface-2);
+  font-weight: 700;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.file-button:hover,
+.file-button:focus-within {
+  background: var(--surface-3);
+}
+
+.file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.comparison-grid,
+.comparison-transfer {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.comparison-transfer {
+  padding-top: 0.3rem;
+  border-top: 1px solid rgba(50, 66, 61, 0.65);
+}
+
+.comparison-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1.25fr) repeat(3, minmax(4.5rem, 0.75fr));
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 2.4rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  padding: 0.5rem 0.6rem;
+}
+
+.comparison-row span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.comparison-row strong,
+.comparison-row em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-size: 0.86rem;
+}
+
+.comparison-row em {
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 800;
+}
+
 .validation-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -580,7 +657,17 @@ button {
     width: 100%;
   }
 
-  .secondary-button {
+  .secondary-button,
+  .file-button {
     width: 100%;
+  }
+
+  .comparison-row {
+    grid-template-columns: 1fr;
+  }
+
+  .comparison-row strong,
+  .comparison-row em {
+    text-align: left;
   }
 }

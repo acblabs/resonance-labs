@@ -6,6 +6,8 @@ import {
   acousticReportFilename,
   buildAcousticReport,
   buildDeviceValidation,
+  compareAcousticReports,
+  parseAcousticReportPayload,
   wrapTextForWidth,
 } from "./acousticReport";
 
@@ -22,6 +24,8 @@ describe("acoustic report helpers", () => {
     expect(report.descriptors.brightness).toBe("Bright");
     expect(report.validation.status).toBe("pass");
     expect(report.method_notes.join(" ")).toContain("regularized driven-path");
+    expect(report.method_notes.join(" ")).toContain("impulse envelope");
+    expect(report.analysis.dsp.decay_bands).toHaveLength(3);
     expect(findForbiddenKeys(report)).toEqual([]);
   });
 
@@ -148,6 +152,41 @@ describe("acoustic report helpers", () => {
       "resonancelab-12345678-2026-06-20T16-30-00-000Z.json",
     );
   });
+
+  it("parses exported report JSON and compares repeat captures", () => {
+    const first = buildAcousticReport(
+      makeAnalysis(),
+      null,
+      new Date("2026-06-20T16:30:00Z"),
+    );
+    const second = buildAcousticReport(
+      makeAnalysis({
+        alignmentConfidence: 0.66,
+        signalToNoiseDb: 19.5,
+        rt60Seconds: 0.92,
+      }),
+      null,
+      new Date("2026-06-20T16:35:00Z"),
+    );
+
+    const parsed = parseAcousticReportPayload(JSON.parse(JSON.stringify(first)));
+    const comparison = compareAcousticReports(parsed, second);
+
+    expect(comparison.same_capture_condition).toBe(true);
+    expect(comparison.metrics.find((metric) => metric.id === "snr")?.delta).toBe(
+      "-4.0 dB",
+    );
+    expect(comparison.metrics.find((metric) => metric.id === "rt60")?.second).toBe(
+      "0.920 s",
+    );
+    expect(comparison.transfer_bands[0].delta).toBe("0.0 dB");
+  });
+
+  it("rejects non-report comparison imports", () => {
+    expect(() => parseAcousticReportPayload({ schema_version: "elsewhere" })).toThrow(
+      "ResonanceLab acoustic report",
+    );
+  });
 });
 
 function makeAnalysis(
@@ -264,6 +303,12 @@ function makeAnalysis(
           peak_db: -12,
         },
       ],
+      impulse_response: {
+        method: "regularized_deconvolution",
+        times_seconds: [0, 0.01, 0.02],
+        magnitude_db: [-12, 0, -24],
+        regularization: 0.0001,
+      },
       dominant_peaks: [
         {
           frequency_hz: 2063.2,
@@ -280,6 +325,32 @@ function makeAnalysis(
         window_start_seconds: 0.859,
         window_end_seconds: 1.75,
       },
+      decay_bands: [
+        {
+          label: "low",
+          start_hz: 100,
+          end_hz: 500,
+          decay_rate_per_second: 7.8,
+          rt60_seconds: 0.885,
+          fit_r2: 0.58,
+        },
+        {
+          label: "mid",
+          start_hz: 500,
+          end_hz: 2000,
+          decay_rate_per_second: 8.45,
+          rt60_seconds: rt60Seconds,
+          fit_r2: fitR2,
+        },
+        {
+          label: "high",
+          start_hz: 2000,
+          end_hz: 8000,
+          decay_rate_per_second: 10.5,
+          rt60_seconds: 0.658,
+          fit_r2: 0.62,
+        },
+      ],
     },
     warnings: [],
   };

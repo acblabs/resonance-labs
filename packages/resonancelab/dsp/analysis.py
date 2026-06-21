@@ -16,7 +16,12 @@ ALIGNMENT_ACCEPT_CONFIDENCE = 0.20
 ALIGNMENT_WARN_CONFIDENCE = ALIGNMENT_ACCEPT_CONFIDENCE
 SNR_WARN_DB = 12.0
 MIN_POST_WINDOW_SECONDS = 0.10
+MIN_NOISE_WINDOW_SECONDS = 0.05
+MIN_DECAY_FIT_POINTS = 6
+MIN_DECAY_DYNAMIC_RANGE_DB = 6.0
 TRANSFER_RESPONSE_REGULARIZATION = 1e-4
+IMPULSE_RESPONSE_MAX_SECONDS = 0.18
+IMPULSE_RESPONSE_MAX_POINTS = 192
 DEFAULT_TRANSFER_BANDS_HZ = (
     (100.0, 250.0),
     (250.0, 500.0),
@@ -27,6 +32,11 @@ DEFAULT_TRANSFER_BANDS_HZ = (
     (8000.0, 12000.0),
     (12000.0, 16000.0),
     (16000.0, 20000.0),
+)
+DEFAULT_DECAY_BANDS_HZ = (
+    ("low", 100.0, 500.0),
+    ("mid", 500.0, 2000.0),
+    ("high", 2000.0, 8000.0),
 )
 
 
@@ -107,6 +117,16 @@ class TransferBand:
 
 
 @dataclass(frozen=True)
+class ResponseTrace:
+    """Compact regularized impulse-envelope proxy for report visualization."""
+
+    method: Literal["regularized_deconvolution"]
+    times_seconds: list[float]
+    magnitude_db: list[float]
+    regularization: float
+
+
+@dataclass(frozen=True)
 class DecayEstimate:
     """Exponential ring-down fit from the post-chirp envelope."""
 
@@ -116,6 +136,18 @@ class DecayEstimate:
     fit_r2: float | None
     window_start_seconds: float
     window_end_seconds: float
+
+
+@dataclass(frozen=True)
+class DecayBandEstimate:
+    """Band-limited decay estimate for low/mid/high report comparisons."""
+
+    label: Literal["low", "mid", "high"]
+    start_hz: float
+    end_hz: float
+    decay_rate_per_second: float | None
+    rt60_seconds: float | None
+    fit_r2: float | None
 
 
 @dataclass(frozen=True)
@@ -130,8 +162,10 @@ class ChirpDspAnalysis:
     stft: SpectrogramGrid
     mel_spectrogram: SpectrogramGrid
     transfer_response: list[TransferBand]
+    impulse_response: ResponseTrace
     dominant_peaks: list[PeakFeature]
     decay: DecayEstimate
+    decay_bands: list[DecayBandEstimate]
 
 
 def generate_log_chirp(spec: ChirpSpec, sample_rate_hz: int) -> npt.NDArray[np.float64]:
@@ -265,14 +299,19 @@ def analyze_chirp_response(
         post_start = min(raw.size, max(post_start, expected_start_sample + reference.size))
         post_end = raw.size
         post_window = filtered[post_start:post_end]
+    post_window_usable = post_window.size >= minimum_post_samples
 
+    noise_end_candidates = [expected_start_sample, chirp_start]
+    if alignment.detected_start_sample is not None:
+        noise_end_candidates.append(alignment.detected_start_sample)
     signal_to_noise_db = _estimate_snr_db(
         filtered,
+        sample_rate_hz=sample_rate_hz,
         signal_start=chirp_start,
         signal_end=chirp_end,
-        noise_end=min(expected_start_sample, chirp_start),
+        noise_end=min(noise_end_candidates),
     )
-    spectrum_window = post_window if post_window.size >= 64 else chirp_window
+    spectrum_window = post_window if post_window_usable else chirp_window
     fft = compute_spectral_summary(
         spectrum_window,
         sample_rate_hz,
@@ -290,6 +329,11 @@ def analyze_chirp_response(
         sample_rate_hz,
         min_hz=chirp.start_hz,
         max_hz=min(chirp.end_hz, nyquist_hz),
+    )
+    impulse_response = compute_impulse_response(
+        response_window,
+        reference,
+        sample_rate_hz,
     )
     peaks = find_dominant_peaks(
         spectrum_window,
@@ -313,6 +357,12 @@ def analyze_chirp_response(
         sample_rate_hz,
         window_start_seconds=post_start / sample_rate_hz,
     )
+    decay_bands = estimate_decay_bands(
+        post_window,
+        sample_rate_hz,
+        window_start_seconds=post_start / sample_rate_hz,
+        max_hz=min(nyquist_hz * 0.98, max(chirp.end_hz, 8000.0)),
+    )
 
     return ChirpDspAnalysis(
         bandpass_low_hz=bandpass_low_hz,
@@ -323,8 +373,10 @@ def analyze_chirp_response(
         stft=stft,
         mel_spectrogram=mel,
         transfer_response=transfer_response,
+        impulse_response=impulse_response,
         dominant_peaks=peaks,
         decay=decay,
+        decay_bands=decay_bands,
     )
 
 
@@ -608,6 +660,133 @@ def compute_transfer_response(
     return transfer_bands
 
 
+def compute_impulse_response(
+    captured_response: npt.ArrayLike,
+    reference_chirp: npt.ArrayLike,
+    sample_rate_hz: int,
+    *,
+    regularization: float = TRANSFER_RESPONSE_REGULARIZATION,
+    max_seconds: float = IMPULSE_RESPONSE_MAX_SECONDS,
+    max_points: int = IMPULSE_RESPONSE_MAX_POINTS,
+) -> ResponseTrace:
+    """Compute a compact regularized deconvolution impulse-envelope proxy.
+
+    The FFT is padded for linear deconvolution, not circular deconvolution, and the
+    returned trace is a local RMS envelope normalized after compaction. It is a
+    single-device acoustic fingerprint feature, not a spatial impulse response or
+    geometry estimate.
+    """
+
+    captured = _as_mono_float64(captured_response)
+    reference = _as_mono_float64(reference_chirp)
+    regularization_value = max(0.0, regularization)
+    if captured.size == 0 or reference.size == 0 or sample_rate_hz <= 0:
+        return ResponseTrace(
+            method="regularized_deconvolution",
+            times_seconds=[],
+            magnitude_db=[],
+            regularization=regularization_value,
+        )
+
+    fft_size = _next_power_of_two(captured.size + reference.size - 1)
+    captured_centered = captured - float(np.mean(captured))
+    reference_centered = reference - float(np.mean(reference))
+    if (
+        float(np.linalg.norm(captured_centered)) <= EPSILON
+        or float(np.linalg.norm(reference_centered)) <= EPSILON
+    ):
+        return ResponseTrace(
+            method="regularized_deconvolution",
+            times_seconds=[],
+            magnitude_db=[],
+            regularization=regularization_value,
+        )
+    captured_spectrum = np.fft.rfft(captured_centered, n=fft_size)
+    reference_spectrum = np.fft.rfft(reference_centered, n=fft_size)
+    reference_power = np.square(np.abs(reference_spectrum))
+    regularizer = regularization_value * max(float(np.max(reference_power)), EPSILON)
+    response = (
+        captured_spectrum
+        * np.conj(reference_spectrum)
+        / (reference_power + regularizer + EPSILON)
+    )
+    impulse = np.fft.irfft(response, n=fft_size)
+    trace_samples = min(
+        impulse.size,
+        max(1, int(round(max(0.001, max_seconds) * sample_rate_hz))),
+    )
+    max_points = max(1, int(max_points))
+    indices = _compact_indices(trace_samples, max_points)
+    envelope_frame = max(8, int(round(0.001 * sample_rate_hz)))
+    envelope_frame = min(envelope_frame, trace_samples)
+    kernel = np.ones(envelope_frame, dtype=np.float64) / envelope_frame
+    envelope_power = np.convolve(np.square(impulse[:trace_samples]), kernel, mode="same")
+    envelope = np.sqrt(np.maximum(envelope_power, EPSILON))
+    compact_magnitude_db = 20.0 * np.log10(envelope[indices] + EPSILON)
+    peak_db = float(np.max(compact_magnitude_db)) if compact_magnitude_db.size else 0.0
+    normalized_db = np.maximum(compact_magnitude_db - peak_db, -96.0)
+    times = np.arange(trace_samples, dtype=np.float64) / sample_rate_hz
+
+    return ResponseTrace(
+        method="regularized_deconvolution",
+        times_seconds=_float_list(times[indices]),
+        magnitude_db=_float_list(normalized_db),
+        regularization=regularization_value,
+    )
+
+
+def estimate_decay_bands(
+    samples: npt.ArrayLike,
+    sample_rate_hz: int,
+    *,
+    window_start_seconds: float,
+    max_hz: float,
+    bands_hz: tuple[
+        tuple[Literal["low", "mid", "high"], float, float], ...
+    ] = DEFAULT_DECAY_BANDS_HZ,
+) -> list[DecayBandEstimate]:
+    """Estimate low/mid/high decay from band-limited post-chirp windows.
+
+    FFT-domain zero-phase bandpass filtering can introduce symmetric ringing around
+    sharp onsets, so these band RT60 values are comparison diagnostics rather than
+    calibrated reverberation measurements.
+    """
+
+    array = _as_mono_float64(samples)
+    if array.size == 0 or sample_rate_hz <= 0:
+        return []
+
+    nyquist_hz = sample_rate_hz / 2.0
+    constrained_max = min(max_hz, nyquist_hz * 0.98)
+    estimates: list[DecayBandEstimate] = []
+    for label, band_start, band_end in bands_hz:
+        start = max(20.0, float(band_start))
+        end = min(float(band_end), constrained_max)
+        if start >= end:
+            continue
+        try:
+            filtered = apply_fft_bandpass(array, sample_rate_hz, start, end)
+        except ValueError:
+            continue
+        decay = estimate_decay(
+            filtered,
+            sample_rate_hz,
+            window_start_seconds=window_start_seconds,
+        )
+        estimates.append(
+            DecayBandEstimate(
+                label=label,
+                start_hz=start,
+                end_hz=end,
+                decay_rate_per_second=decay.decay_rate_per_second,
+                rt60_seconds=decay.rt60_seconds,
+                fit_r2=decay.fit_r2,
+            )
+        )
+
+    return estimates
+
+
 def find_dominant_peaks(
     samples: npt.ArrayLike,
     sample_rate_hz: int,
@@ -693,7 +872,7 @@ def estimate_decay(
     frame_size = max(8, int(round(frame_seconds * sample_rate_hz)))
     hop_size = max(1, int(round(hop_seconds * sample_rate_hz)))
     times, envelope = _rms_envelope(array, sample_rate_hz, frame_size, hop_size)
-    if envelope.size < 4:
+    if envelope.size < MIN_DECAY_FIT_POINTS:
         return DecayEstimate(
             method="rms_envelope_log_linear",
             decay_rate_per_second=None,
@@ -709,7 +888,7 @@ def estimate_decay(
     noise_floor = max(float(np.percentile(envelope, 15.0)), EPSILON)
     fit_floor = max(noise_floor * 1.5, float(np.max(envelope)) * 0.015, EPSILON)
     fit_mask = fit_envelope > fit_floor
-    if int(np.sum(fit_mask)) < 4:
+    if int(np.sum(fit_mask)) < MIN_DECAY_FIT_POINTS:
         return DecayEstimate(
             method="rms_envelope_log_linear",
             decay_rate_per_second=None,
@@ -723,7 +902,29 @@ def estimate_decay(
     signal_above_floor = np.sqrt(
         np.maximum(np.square(fit_envelope[fit_mask]) - noise_floor**2, EPSILON)
     )
+    dynamic_range_db = 20.0 * math.log10(
+        (float(np.max(signal_above_floor)) + EPSILON)
+        / (float(np.min(signal_above_floor)) + EPSILON)
+    )
+    if dynamic_range_db < MIN_DECAY_DYNAMIC_RANGE_DB:
+        return DecayEstimate(
+            method="rms_envelope_log_linear",
+            decay_rate_per_second=None,
+            rt60_seconds=None,
+            fit_r2=None,
+            window_start_seconds=window_start_seconds,
+            window_end_seconds=window_end_seconds,
+        )
     y = np.log(signal_above_floor)
+    if not np.all(np.isfinite(y)):
+        return DecayEstimate(
+            method="rms_envelope_log_linear",
+            decay_rate_per_second=None,
+            rt60_seconds=None,
+            fit_r2=None,
+            window_start_seconds=window_start_seconds,
+            window_end_seconds=window_end_seconds,
+        )
     design = np.column_stack([x, np.ones_like(x)])
     weights = np.square(signal_above_floor)
     normalized_weights = weights / max(float(np.max(weights)), EPSILON)
@@ -737,8 +938,16 @@ def estimate_decay(
     )
     total_sum = float(np.sum(normalized_weights * np.square(y - weighted_mean)))
     fit_r2 = 1.0 - residual_sum / total_sum if total_sum > EPSILON else None
+    if not math.isfinite(float(slope)):
+        robust_slope = _median_decay_slope(x, y)
+        slope = robust_slope if robust_slope is not None else float("nan")
+        fit_r2 = None
+    elif fit_r2 is None:
+        robust_slope = _median_decay_slope(x, y)
+        if robust_slope is not None:
+            slope = robust_slope
 
-    if slope >= 0:
+    if not math.isfinite(float(slope)) or slope >= 0:
         decay_rate = None
         rt60 = None
         fit_r2 = None
@@ -830,13 +1039,15 @@ def _slice_with_padding(
 def _estimate_snr_db(
     samples: npt.NDArray[np.float64],
     *,
+    sample_rate_hz: int,
     signal_start: int,
     signal_end: int,
     noise_end: int,
 ) -> float | None:
     signal = samples[max(0, signal_start) : max(signal_start, signal_end)]
     noise = samples[: max(0, min(noise_end, samples.size))]
-    if signal.size == 0 or noise.size < 8:
+    minimum_noise_samples = max(8, int(round(MIN_NOISE_WINDOW_SECONDS * sample_rate_hz)))
+    if signal.size == 0 or noise.size < minimum_noise_samples:
         return None
     signal_rms = _rms(signal)
     noise_rms = _rms(noise)
@@ -1051,6 +1262,28 @@ def _interpolated_threshold_frequency(
     return float(
         frequencies[low_index] + fraction * (frequencies[high_index] - frequencies[low_index])
     )
+
+
+def _median_decay_slope(
+    times: npt.NDArray[np.float64],
+    log_envelope: npt.NDArray[np.float64],
+    *,
+    max_points: int = 80,
+) -> float | None:
+    if times.size < MIN_DECAY_FIT_POINTS or times.size != log_envelope.size:
+        return None
+
+    indices = _compact_indices(times.size, max_points)
+    x = times[indices]
+    y = log_envelope[indices]
+    delta_x = x[np.newaxis, :] - x[:, np.newaxis]
+    delta_y = y[np.newaxis, :] - y[:, np.newaxis]
+    mask = delta_x > EPSILON
+    slopes = delta_y[mask] / delta_x[mask]
+    slopes = slopes[np.isfinite(slopes)]
+    if slopes.size == 0:
+        return None
+    return float(np.median(slopes))
 
 
 def _rms_envelope(

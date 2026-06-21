@@ -37,10 +37,12 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 - Compact STFT grid for browser spectrogram rendering.
 - Compact mel-spectrogram grid computed without Librosa or PyTorch.
 - Regularized transfer-response magnitude by configured frequency bands.
+- Compact regularized impulse-envelope proxy for early-response report visualization.
 - Dominant post-chirp peak detection with prominence and Q-factor proxies.
 - dB-domain sub-bin peak interpolation for dominant peak frequency estimates.
 - Interpolated half-power crossings for Q-factor bandwidth estimates.
 - RMS-envelope log-linear decay fitting with RT60 proxy output and weighted fit quality.
+- Conservative low, mid, and high band-limited decay estimates for controlled repeat comparisons.
 - Signal-to-noise reporting against the pre-roll noise floor, clamped to exclude early detected chirp energy.
 - Browser tabs for waveform, FFT, STFT, and mel-spectrogram views.
 - Deterministic golden DSP tests covering alignment, bandpass behavior, analytic damped sinusoids, peak detection, spectrogram shapes, post-window fallback timing, SNR windowing, and decay-fit edge cases.
@@ -62,6 +64,8 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 - Decay-window and decay-fit diagnostics.
 - JSON acoustic report export with schema version, descriptors, validation results, compact DSP evidence, caveats, and optional explanation output.
 - PNG acoustic report export with summary metrics, mel acoustic image, transfer bands, dominant modes, validation checks, and caveats.
+- PNG acoustic report export now includes capture metadata, an impulse-envelope strip, and low/mid/high decay bands.
+- Browser-local comparison of two exported JSON acoustic reports with metric deltas, transfer-band deltas, and capture-condition caveats.
 - Golden public-safe report analysis fixture covering report-building and validation semantics.
 - Structured `/api/v1/explain` endpoint for compact DSP evidence.
 - Lab UI explanation panel for observations, acoustic hypotheses, caveats, and next-measurement guidance.
@@ -86,16 +90,14 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 
 ## Planned DSP Features
 
-- Better direct-path and room-response caveat reporting.
 - MFCC summary statistics.
 - Real recorded report fixtures from multiple devices, rooms, and sessions, tracked in `docs/real_recording_fixtures.md`.
-- More explicit impulse-response and deconvolved-response visualization.
+- Better direct-path and room-response caveat reporting.
 
 ## Planned Room Fingerprint Features
 
 - Low-frequency mode grouping and warning labels for unstable or unresolved peaks.
-- Decay-band visualization for low, mid, and high frequency ranges.
-- Side-by-side comparison of exported JSON reports.
+- Cross-session comparison summaries once real fixture coverage is available.
 
 ## Planned Lab Assistant Features
 

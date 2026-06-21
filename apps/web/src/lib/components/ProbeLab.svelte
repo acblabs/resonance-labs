@@ -14,8 +14,10 @@
   import {
     buildAcousticReport,
     buildDeviceValidation,
+    compareAcousticReports,
     downloadAcousticReportJson,
     downloadAcousticReportPng,
+    parseAcousticReportPayload,
   } from "$lib/report/acousticReport";
   import type {
     AnalysisResponse,
@@ -24,6 +26,7 @@
     ProbeConfig,
   } from "$lib/audio/types";
   import type {
+    AcousticReport,
     DeviceValidationSummary,
     ValidationStatus,
   } from "$lib/report/acousticReport";
@@ -49,6 +52,8 @@
   let explainError = "";
   let exportingReport = false;
   let reportError = "";
+  let comparisonReports: AcousticReport[] = [];
+  let comparisonError = "";
 
   onMount(async () => {
     await loadConfig();
@@ -73,6 +78,7 @@
     explanation = null;
     explainError = "";
     reportError = "";
+    comparisonError = "";
     status = "Starting";
 
     try {
@@ -137,6 +143,37 @@
     }
   }
 
+  async function importComparisonReports(event: Event): Promise<void> {
+    const input = event.currentTarget as HTMLInputElement;
+    const files = Array.from(input.files ?? []).slice(0, 2);
+    comparisonError = "";
+    if (files.length < 2) {
+      comparisonReports = [];
+      comparisonError = "Select two exported report JSON files.";
+      input.value = "";
+      return;
+    }
+
+    try {
+      comparisonReports = await Promise.all(
+        files.map(async (file) =>
+          parseAcousticReportPayload(JSON.parse(await file.text())),
+        ),
+      );
+    } catch (errorValue) {
+      comparisonReports = [];
+      comparisonError =
+        errorValue instanceof Error ? errorValue.message : String(errorValue);
+    } finally {
+      input.value = "";
+    }
+  }
+
+  function clearComparisonReports(): void {
+    comparisonReports = [];
+    comparisonError = "";
+  }
+
   $: expectedSeconds =
     (config.pre_roll_ms + config.duration_ms + config.post_roll_ms) / 1000;
   $: topPeak = result?.dsp.dominant_peaks[0] ?? null;
@@ -146,6 +183,10 @@
       : (result?.dsp.stft ?? null);
   $: validation = result ? buildDeviceValidation(result) : null;
   $: dominantPeakNote = topPeak ? highQNote(topPeak.q_factor) : "";
+  $: reportComparison =
+    comparisonReports.length >= 2
+      ? compareAcousticReports(comparisonReports[0], comparisonReports[1])
+      : null;
 
   function formatHz(value: number | null | undefined): string {
     if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -238,6 +279,10 @@
     }
     return "Fail";
   }
+
+  function shortId(report: AcousticReport): string {
+    return report.analysis_id.slice(0, 8);
+  }
 </script>
 
 <main class="main">
@@ -246,7 +291,7 @@
       <div class="panel-header">
         <h1 class="panel-title">Room Acoustic Fingerprint</h1>
         <p class="panel-subtitle">
-          Chirp capture, impulse-response features, spectrograms, decay, and room-mode descriptors.
+          Chirp capture, impulse-envelope features, spectrograms, decay, and room-mode descriptors.
         </p>
       </div>
 
@@ -509,6 +554,71 @@
             {#if reportError}
               <div class="error" role="alert">{reportError}</div>
             {/if}
+
+            <div class="comparison-block" aria-label="Report comparison">
+              <div class="section-heading">
+                <h2>Compare reports</h2>
+                <span>
+                  {comparisonReports.length === 2
+                    ? `${shortId(comparisonReports[0])} / ${shortId(comparisonReports[1])}`
+                    : "JSON"}
+                </span>
+              </div>
+              <div class="actions">
+                <label class="file-button">
+                  Import JSON
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    multiple
+                    on:change={importComparisonReports}
+                  />
+                </label>
+                {#if comparisonReports.length}
+                  <button
+                    class="secondary-button"
+                    type="button"
+                    on:click={clearComparisonReports}
+                  >
+                    Clear
+                  </button>
+                {/if}
+              </div>
+              {#if comparisonError}
+                <div class="error" role="alert">{comparisonError}</div>
+              {/if}
+              {#if reportComparison}
+                <div class="comparison-grid">
+                  {#each reportComparison.metrics as metric}
+                    <div class="comparison-row">
+                      <span>{metric.label}</span>
+                      <strong>{metric.first}</strong>
+                      <strong>{metric.second}</strong>
+                      <em>{metric.delta}</em>
+                    </div>
+                  {/each}
+                </div>
+                {#if reportComparison.transfer_bands.length}
+                  <div class="comparison-transfer">
+                    {#each reportComparison.transfer_bands as band}
+                      <div class="comparison-row">
+                        <span>{band.label}</span>
+                        <strong>{band.first}</strong>
+                        <strong>{band.second}</strong>
+                        <em>{band.delta}</em>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+                {#if reportComparison.caveats.length}
+                  <ul class="notice-list" aria-label="Comparison caveats">
+                    {#each reportComparison.caveats as caveat}
+                      <li>{caveat}</li>
+                    {/each}
+                  </ul>
+                {/if}
+              {/if}
+            </div>
           </div>
 
           {#if validation}
@@ -579,6 +689,21 @@
                 <div class="transfer-row">
                   <span>{formatHz(band.start_hz)}-{formatHz(band.end_hz)}</span>
                   <strong>{formatDb(band.mean_db)}</strong>
+                </div>
+              {/each}
+            </div>
+          {/if}
+
+          {#if result.dsp.decay_bands.length}
+            <div class="section-heading">
+              <h2>Decay bands</h2>
+              <span>RT60 proxies</span>
+            </div>
+            <div class="transfer-list" aria-label="Decay bands">
+              {#each result.dsp.decay_bands as band}
+                <div class="transfer-row">
+                  <span>{band.label} {formatHz(band.start_hz)}-{formatHz(band.end_hz)}</span>
+                  <strong>{formatSeconds(band.rt60_seconds)}</strong>
                 </div>
               {/each}
             </div>

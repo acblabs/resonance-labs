@@ -80,6 +80,13 @@ export type TransferBandFeature = {
   peak_db: number;
 };
 
+export type ResponseTrace = {
+  method: "regularized_deconvolution";
+  times_seconds: number[];
+  magnitude_db: number[];
+  regularization: number;
+};
+
 export type PeakFeature = {
   frequency_hz: number;
   magnitude_db: number;
@@ -96,6 +103,15 @@ export type DecayFeature = {
   window_end_seconds: number;
 };
 
+export type DecayBandFeature = {
+  label: "low" | "mid" | "high";
+  start_hz: number;
+  end_hz: number;
+  decay_rate_per_second: number | null;
+  rt60_seconds: number | null;
+  fit_r2: number | null;
+};
+
 export type DspAnalysis = {
   bandpass_low_hz: number;
   bandpass_high_hz: number;
@@ -104,8 +120,10 @@ export type DspAnalysis = {
   stft: SpectrogramGrid;
   mel_spectrogram: SpectrogramGrid;
   transfer_response: TransferBandFeature[];
+  impulse_response: ResponseTrace;
   dominant_peaks: PeakFeature[];
   decay: DecayFeature;
+  decay_bands: DecayBandFeature[];
 };
 
 export type AnalysisResponse = {

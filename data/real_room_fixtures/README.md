@@ -6,7 +6,7 @@ Keep raw browser WAV files, private room notes, and unreviewed exports outside g
 
 1. Run probes on real devices.
 2. Export the JSON acoustic report from the Lab UI.
-3. Review the report for privacy and quality.
+3. Compare repeated JSON reports in the Lab UI and review them for privacy and quality.
 4. Add the report JSON plus a manifest entry here only when it is safe to publish.
 
 Validate a manifest with:

@@ -40,5 +40,6 @@ Record these fields for every validation session:
 - probe configuration
 - three repeated runs without moving the device
 - exported JSON reports for reviewed runs
+- side-by-side JSON report comparison for repeat runs before adding public fixtures
 
 Do not publish private room names, addresses, raw audio, or unreviewed report exports.

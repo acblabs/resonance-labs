@@ -95,6 +95,16 @@ def build_evidence_packet(request: LlmExplainRequest) -> dict[str, Any]:
         }
         for band in analysis.dsp.transfer_response[:8]
     ]
+    decay_bands = [
+        {
+            "label": band.label,
+            "start_hz": _round_float(band.start_hz, 1),
+            "end_hz": _round_float(band.end_hz, 1),
+            "rt60_seconds": _round_optional(band.rt60_seconds, 4),
+            "fit_r2": _round_optional(band.fit_r2, 4),
+        }
+        for band in analysis.dsp.decay_bands[:3]
+    ]
     evidence: dict[str, Any] = {
         "analysis_id": str(analysis.analysis_id),
         "audio": {
@@ -131,6 +141,7 @@ def build_evidence_packet(request: LlmExplainRequest) -> dict[str, Any]:
                 "rt60_seconds": _round_optional(analysis.dsp.decay.rt60_seconds, 4),
                 "fit_r2": _round_optional(analysis.dsp.decay.fit_r2, 4),
             },
+            "decay_bands": decay_bands,
         },
         "operator_question": request.operator_question,
         "raw_audio_present": False,
@@ -176,6 +187,16 @@ def deterministic_explanation(evidence: dict[str, Any]) -> LlmExplanation:
             f"{top_peak['frequency_hz']:.1f} Hz with "
             f"{top_peak['prominence_db']:.1f} dB prominence."
         )
+    decay_bands = [
+        band
+        for band in dsp.get("decay_bands", [])
+        if band.get("rt60_seconds") is not None
+    ]
+    if decay_bands:
+        band_summary = ", ".join(
+            f"{band['label']} {band['rt60_seconds']:.2f}s" for band in decay_bands[:3]
+        )
+        observations.append(f"Band-limited RT60 proxies are {band_summary}.")
 
     acoustic_hypotheses: list[str] = []
     if rt60 is None:
@@ -191,6 +212,11 @@ def deterministic_explanation(evidence: dict[str, Any]) -> LlmExplanation:
     if top_peak:
         acoustic_hypotheses.append(
             f"The strongest modal feature is near {top_peak['frequency_hz']:.1f} Hz."
+        )
+    if len(decay_bands) >= 2:
+        slowest = max(decay_bands, key=lambda band: band["rt60_seconds"])
+        acoustic_hypotheses.append(
+            f"The {slowest['label']} band has the slowest visible decay in this capture."
         )
 
     caveats = [

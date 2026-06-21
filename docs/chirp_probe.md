@@ -28,10 +28,12 @@ The DSP pipeline currently derives:
 - FFT-domain bandpass filtering around the configured sweep, with zero-padding and cropping to reduce circular wraparound at capture boundaries.
 - FFT, STFT, and mel-spectrogram summaries. The FFT `spectral_floor_db` value is a percentile of the analysis-window spectrum, not the pre-roll recording noise floor.
 - Regularized transfer-response magnitudes by frequency band.
+- Compact impulse-envelope proxy from zero-padded regularized deconvolution, using a local RMS envelope before report compaction.
 - Dominant post-chirp peaks with dB-domain sub-bin peak interpolation and interpolated half-power crossings for Q-factor estimates.
-- RMS-envelope decay and RT60 proxy values; non-decaying or upward-sloping fits report no decay rate, RT60, or fit quality.
+- RMS-envelope decay and RT60 proxy values; non-decaying, low-dynamic-range, or upward-sloping fits report no decay rate, RT60, or fit quality.
+- Low, mid, and high band-limited decay estimates for controlled repeat comparisons. These are filter-ringing-sensitive diagnostics, not calibrated reverberation measurements.
 
-For room acoustic fingerprints, direct speaker-to-microphone energy and reflections are part of the measured response. The app reports quality and caveats instead of trying to remove every direct-path component. Future impulse/deconvolution views should keep regularization explicit and avoid claiming spatial reconstruction from a single speaker/microphone pair.
+For room acoustic fingerprints, direct speaker-to-microphone energy and reflections are part of the measured response. The app reports quality and caveats instead of trying to remove every direct-path component. The impulse-envelope proxy keeps regularization explicit and must not be presented as a spatial reconstruction from a single speaker/microphone pair.
 
 SNR is measured against pre-roll audio that ends before both the scheduled chirp start and the detected chirp start, so early-arriving chirps do not contaminate the noise estimate. Browser-native capture sample rates are preserved rather than resampled because OS/browser resampling can change feature portability.
 

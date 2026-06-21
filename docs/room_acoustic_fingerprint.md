@@ -5,7 +5,7 @@ ResonanceLab now treats speaker-to-microphone bleed and room reflections as the 
 ## What The Fingerprint Shows
 
 - **Chirp response**: the recorded waveform aligned against the emitted logarithmic sweep.
-- **Impulse proxy**: a regularized deconvolution or matched-filter view that highlights early direct path and later reflections.
+- **Impulse envelope proxy**: a compact zero-padded regularized deconvolution envelope that highlights early-response structure for controlled comparisons.
 - **Spectrogram**: STFT or mel energy over time, useful for seeing decay texture and frequency-dependent persistence.
 - **Decay map**: low, mid, and high frequency bands showing how quickly energy falls after the sweep.
 - **Mode candidates**: prominent low/mid-frequency peaks with Q-factor and prominence estimates when the data supports them.
@@ -24,17 +24,17 @@ A single speaker and single microphone do not provide an acoustic aperture. The 
 - Move to a second position only when you explicitly want a different fingerprint of the same room.
 - Treat low SNR, weak alignment, and forced browser audio processing as caveats.
 
-## PNG Report Target
+## PNG Report Contents
 
-The polished export should be a compact visual report:
+The PNG export is a compact visual report:
 
 - Header with timestamp, device/browser metadata, chirp settings, sample rate, and quality flags.
-- Waveform strip with detected chirp start and post-chirp decay window.
-- Impulse/deconvolution strip with direct-path and reflection markers when available.
-- STFT or mel-spectrogram heatmap.
-- Decay-band panel for low, mid, and high frequency bands.
+- Mel-spectrogram heatmap.
+- Regularized impulse-envelope proxy strip for early-response comparison.
+- Transfer-response band panel.
+- Low, mid, and high decay-band panel.
 - Detected mode table with frequency, prominence, and Q-factor.
 - Descriptor row for room character, brightness, SNR, alignment, and caveats.
 - Footer that states the single speaker/mic limitation.
 
-The report should be useful for comparison and documentation, not for asserting room geometry.
+Exported JSON reports can also be imported in pairs inside the Lab UI for browser-local metric and transfer-band deltas. The reports should be useful for comparison and documentation, not for asserting room geometry.
