@@ -45,6 +45,7 @@ Keep these values in the Cloud Build trigger UI or a private local note, not in 
 | `_LLM_MODEL` | `gemini-3.1-pro-preview` | Gemini model ID used by `/api/v1/explain` when enabled. |
 | `_LLM_LOCATION` | `global` | Gemini Enterprise Agent Platform / Vertex location. |
 | `_LLM_THINKING_LEVEL` | `HIGH` | Gemini thinking level for explanation calls. |
+| `_LLM_MAX_OUTPUT_TOKENS` | `8192` | Output cap for Gemini explanations; keep enough headroom for high-thinking calls to return JSON. |
 
 Do not add the GCP project ID to the repository. Cloud Build resolves `$PROJECT_ID` from the selected GCP project, and deploy logs are private to that project unless you deliberately publish them.
 
@@ -86,8 +87,9 @@ _LLM_PROVIDER=vertex_gemini
 _LLM_MODEL=gemini-3.1-pro-preview
 _LLM_LOCATION=global
 _LLM_THINKING_LEVEL=HIGH
+_LLM_MAX_OUTPUT_TOKENS=8192
 ```
 
-The deploy step sets `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `GOOGLE_GENAI_USE_ENTERPRISE=true`, and matching `RESONANCELAB_LLM_*` values on the API service. Use Cloud Run service identity and IAM; do not add Gemini API keys to the app.
+The deploy step sets `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `GOOGLE_GENAI_USE_ENTERPRISE=true`, and matching `RESONANCELAB_LLM_*` values on the API service. Use Cloud Run service identity and IAM; do not add Gemini API keys to the app. If Gemini returns an empty response with `MAX_TOKENS`, raise `_LLM_MAX_OUTPUT_TOKENS` or lower `_LLM_THINKING_LEVEL`.
 
 After the first deploy, open the web Cloud Run URL on desktop Chrome and Android Chrome. The browser must use HTTPS for microphone access, which Cloud Run provides by default.

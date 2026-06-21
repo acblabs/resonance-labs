@@ -88,7 +88,7 @@ class Settings:
         default_factory=lambda: float(os.getenv("RESONANCELAB_LLM_TEMPERATURE", "0.2"))
     )
     llm_max_output_tokens: int = field(
-        default_factory=lambda: int(os.getenv("RESONANCELAB_LLM_MAX_OUTPUT_TOKENS", "900"))
+        default_factory=lambda: int(os.getenv("RESONANCELAB_LLM_MAX_OUTPUT_TOKENS", "8192"))
     )
 
 

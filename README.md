@@ -89,7 +89,7 @@ See `FEATURES.md` for the current and planned feature list.
 
 The response includes upload/decode health, matched-filter alignment metadata, compact spectral grids, transfer-response bands, dominant peaks, decay features, and warnings.
 
-`POST /api/v1/explain` accepts analysis JSON and `include_raw_audio=false`. It never accepts raw audio. By default it returns a deterministic DSP explanation; set `RESONANCELAB_LLM_ENABLED=true` on the API service to call Gemini through Vertex AI / Gemini Enterprise Agent Platform. The request body is capped by `RESONANCELAB_MAX_EXPLAIN_BODY_BYTES` and defaults to 512 KiB.
+`POST /api/v1/explain` accepts analysis JSON and `include_raw_audio=false`. It never accepts raw audio. By default it returns a deterministic DSP explanation; set `RESONANCELAB_LLM_ENABLED=true` on the API service to call Gemini through Vertex AI / Gemini Enterprise Agent Platform. The request body is capped by `RESONANCELAB_MAX_EXPLAIN_BODY_BYTES` and defaults to 512 KiB; Gemini output is capped by `RESONANCELAB_LLM_MAX_OUTPUT_TOKENS`, which defaults to 8192 so high-thinking calls have room to return compact JSON.
 
 ## Repository Layout
 
@@ -119,7 +119,7 @@ Use `[skip docs]` in a commit message only when a docs update would be noise. Th
 
 ## Cloud Build
 
-`cloudbuild.yaml` is the GCP CI/build entry point. It runs project hygiene checks, API tests, SvelteKit checks/builds, and builds the API and web container images. By default it does not push or deploy; a main-branch Cloud Build trigger can set `_DEPLOY_TARGET=cloud-run` to push images, deploy `resonancelab-api` and `resonancelab-web` to second-generation Cloud Run services with startup CPU boost, wire `PUBLIC_API_URL`, and update API CORS. Gemini explanations can be enabled on the same API service with `_LLM_ENABLED=true` after granting the runtime service account Vertex AI access.
+`cloudbuild.yaml` is the GCP CI/build entry point. It runs project hygiene checks, API tests, SvelteKit checks/builds, and builds the API and web container images. By default it does not push or deploy; a main-branch Cloud Build trigger can set `_DEPLOY_TARGET=cloud-run` to push images, deploy `resonancelab-api` and `resonancelab-web` to second-generation Cloud Run services with startup CPU boost, wire `PUBLIC_API_URL`, and update API CORS. Gemini explanations can be enabled on the same API service with `_LLM_ENABLED=true` after granting the runtime service account Vertex AI access; `_LLM_MAX_OUTPUT_TOKENS` controls the hosted explanation output budget.
 
 Keep project IDs, service account details, and deployment-specific substitutions in GCP trigger settings or ignored local files, not in the public repo. See `docs/gcp_cloud_run.md`.
 

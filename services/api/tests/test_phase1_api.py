@@ -7,6 +7,7 @@ import struct
 import unittest
 import wave
 from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -241,6 +242,65 @@ class Phase1ApiTests(unittest.TestCase):
             get_settings.cache_clear()
 
         self.assertEqual(response.status_code, 413)
+
+    def test_explain_reports_empty_gemini_token_exhaustion(self) -> None:
+        analysis = self._analyze_probe_payload()
+
+        class FakeGenerateContentConfig:
+            def __init__(self, **kwargs) -> None:
+                self.kwargs = kwargs
+
+        class FakeThinkingConfig:
+            def __init__(self, **kwargs) -> None:
+                self.kwargs = kwargs
+
+        class FakeThinkingLevel:
+            HIGH = "HIGH"
+
+        class FakeTypes:
+            GenerateContentConfig = FakeGenerateContentConfig
+            ThinkingConfig = FakeThinkingConfig
+            ThinkingLevel = FakeThinkingLevel
+
+        class FakeModels:
+            def generate_content(self, **kwargs):
+                return SimpleNamespace(
+                    text="",
+                    candidates=[SimpleNamespace(finish_reason="MAX_TOKENS")],
+                    usage_metadata=SimpleNamespace(
+                        prompt_token_count=128,
+                        candidates_token_count=0,
+                        thoughts_token_count=64,
+                        total_token_count=192,
+                    ),
+                )
+
+        class FakeClient:
+            models = FakeModels()
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "RESONANCELAB_LLM_ENABLED": "true",
+                    "RESONANCELAB_LLM_MAX_OUTPUT_TOKENS": "64",
+                },
+            ),
+            patch("app.services.explainer._vertex_client", return_value=(FakeClient(), FakeTypes)),
+        ):
+            get_settings.cache_clear()
+            client = TestClient(create_app())
+            response = client.post(
+                "/api/v1/explain",
+                json={"analysis": analysis, "include_raw_audio": False},
+            )
+            get_settings.cache_clear()
+
+        self.assertEqual(response.status_code, 503)
+        detail = response.json()["detail"]
+        self.assertIn("finish_reasons=MAX_TOKENS", detail)
+        self.assertIn("max_output_tokens=64", detail)
+        self.assertIn("RESONANCELAB_LLM_MAX_OUTPUT_TOKENS", detail)
 
     def test_explain_rejects_raw_audio_flag(self) -> None:
         analysis = self._analyze_probe_payload()

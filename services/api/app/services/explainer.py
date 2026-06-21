@@ -272,7 +272,7 @@ def _generate_vertex_gemini_explanation(
 
     text = (getattr(response, "text", "") or "").strip()
     if not text:
-        raise LlmExplanationError("Gemini explanation response was empty.")
+        raise LlmExplanationError(_empty_gemini_response_message(response, settings))
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
@@ -318,6 +318,56 @@ def _thinking_level(types: Any, configured: str) -> Any:
     if enum is None:
         return normalized
     return getattr(enum, normalized, normalized)
+
+
+def _empty_gemini_response_message(response: Any, settings: Settings) -> str:
+    details = [
+        "Gemini explanation response was empty",
+        f"model={settings.llm_model}",
+        f"thinking_level={settings.llm_thinking_level}",
+        f"max_output_tokens={settings.llm_max_output_tokens}",
+    ]
+    finish_reasons = _candidate_finish_reasons(response)
+    if finish_reasons:
+        details.append(f"finish_reasons={','.join(finish_reasons)}")
+    usage_summary = _usage_summary(response)
+    if usage_summary:
+        details.append(f"usage={usage_summary}")
+    if "MAX_TOKENS" in finish_reasons:
+        details.append(
+            "increase RESONANCELAB_LLM_MAX_OUTPUT_TOKENS or lower "
+            "RESONANCELAB_LLM_THINKING_LEVEL"
+        )
+    return "; ".join(details) + "."
+
+
+def _candidate_finish_reasons(response: Any) -> list[str]:
+    reasons: list[str] = []
+    for candidate in getattr(response, "candidates", []) or []:
+        reason = getattr(candidate, "finish_reason", None)
+        if reason is None:
+            continue
+        name = getattr(reason, "name", None) or str(reason)
+        reasons.append(name.rsplit(".", 1)[-1])
+    return reasons
+
+
+def _usage_summary(response: Any) -> str | None:
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return None
+
+    parts: list[str] = []
+    for key in (
+        "prompt_token_count",
+        "candidates_token_count",
+        "thoughts_token_count",
+        "total_token_count",
+    ):
+        value = getattr(usage, key, None)
+        if value is not None:
+            parts.append(f"{key}={value}")
+    return ",".join(parts) or None
 
 
 def _coerce_explanation(payload: dict[str, Any], fallback: LlmExplanation) -> LlmExplanation:

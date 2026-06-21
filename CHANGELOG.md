@@ -37,6 +37,7 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Changed
 
+- Raised the default Gemini explanation output cap and wired it through Cloud Build deployment substitutions.
 - Lab layout now uses more of wide desktop viewports with sticky controls, a larger signal panel, and denser result grids.
 - Reoriented the app and docs toward room acoustic fingerprints and acoustic report generation.
 - Lab UI now presents room character, brightness, dominant mode, RT60 proxy, transfer bands, and acoustic hypotheses.
@@ -57,6 +58,7 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Fixed
 
+- Empty Gemini explanation responses now include finish-reason and token-usage diagnostics.
 - LLM explanation requests now exclude raw WAV bytes and full high-dimensional signal grids from the hosted model path.
 - Analyze rejects probe configurations whose chirp end frequency reaches the decoded WAV Nyquist limit.
 - Analyze uses browser timing metadata, when available, for the expected chirp position and post-roll analysis window.
