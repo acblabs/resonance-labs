@@ -21,6 +21,7 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 - Cloud Build configuration for GCP checks, container image builds, and opt-in Cloud Run deploys through private trigger substitutions.
 - Local Git hooks for README, CHANGELOG, FEATURES, and SKILL.md freshness checks.
 - Pre-commit enforcement that requires `FEATURES.md` to be updated in every commit.
+- Cloud security architect skill covering GCP hardening, AppSec, AI/ML security, threat modeling, incident response, and framework mappings.
 - Structured API logs with request IDs, request duration, analyze rejection reasons, analysis quality signals, LLM outcomes, and degradation markers.
 - Configurable `RESONANCELAB_LOG_LEVEL` for API logging verbosity.
 - Client-side probe safety clamping before chirp playback.
