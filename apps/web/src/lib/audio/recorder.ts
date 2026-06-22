@@ -35,6 +35,8 @@ type CaptureStatus =
 
 const AUDIO_CONTEXT_RUNNING_TIMEOUT_MS = 1000;
 const AUDIO_CONTEXT_TIMING_GRACE_MS = 1500;
+const AUDIO_OUTPUT_PRIME_SECONDS = 0.02;
+const AUDIO_OUTPUT_PRIME_AMPLITUDE = 0.0001;
 
 const SAFE_MEDIA_TRACK_SETTING_KEYS = [
   'autoGainControl',
@@ -62,6 +64,7 @@ export async function captureProbe(
 
   onStatus('Opening audio context');
   const audioContext = new AudioContextCtor();
+  primeAudioOutput(audioContext);
   await ensureAudioContextRunning(audioContext);
 
   const requestedConstraints: MediaStreamConstraints = {
@@ -312,6 +315,20 @@ function mergeChunks(chunks: Float32Array[]): Float32Array {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function primeAudioOutput(audioContext: AudioContext): void {
+  const frameCount = Math.max(1, Math.round(audioContext.sampleRate * AUDIO_OUTPUT_PRIME_SECONDS));
+  const buffer = audioContext.createBuffer(1, frameCount, audioContext.sampleRate);
+  buffer.getChannelData(0).fill(AUDIO_OUTPUT_PRIME_AMPLITUDE);
+
+  const source = audioContext.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioContext.destination);
+  source.onended = () => {
+    source.disconnect();
+  };
+  source.start();
 }
 
 async function ensureAudioContextRunning(audioContext: AudioContext): Promise<void> {

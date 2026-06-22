@@ -22,7 +22,7 @@ For project context and repository layout details, refer to the root README, FEA
 ### 1.1 Web Audio API & AudioWorklet PCM Capture
 
 *   **AudioContext User Gesture Unlock**: Always instantiate and unlock the `AudioContext` inside a direct user interaction event listener.
-*   **AudioContext Running Guard**: Re-check that the `AudioContext` is running after microphone permission and before scheduling chirp playback. Probe timers should wait on audio-context time so suspended playback cannot silently upload an empty capture.
+*   **AudioContext Running Guard**: Prime audio output immediately from the Start Probe gesture, then re-check that the `AudioContext` is running after microphone permission and before scheduling chirp playback. Probe timers should wait on audio-context time so suspended playback cannot silently upload an empty capture.
 *   **AudioWorklet Integration**: Prefer a custom `AudioWorkletProcessor` for raw PCM capture. Fall back to `ScriptProcessorNode` only when the worklet cannot load.
 *   **iOS Safari Caveats**: iOS devices aggressively silence playback and capture unless initiated via an explicit touch gesture.
 *   **Audio Constraints & Device Quirks**: Request `echoCancellation`, `noiseSuppression`, and `autoGainControl` as `false`, then inspect reported settings because browsers may ignore these flags.

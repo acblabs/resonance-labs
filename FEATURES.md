@@ -12,7 +12,7 @@ Within machine listening, ResonanceLab is best described as active acoustic mach
 - Conservative logarithmic chirp generation with configurable start frequency, end frequency, duration, pre-roll, post-roll, amplitude, and fade.
 - Microphone permission flow from a direct user gesture.
 - AudioContext unlock flow for browser playback and capture.
-- AudioContext running-state checks before chirp playback so suspended browser audio fails visibly instead of producing silent captures.
+- AudioContext output priming and running-state checks before chirp playback so suspended browser audio fails visibly instead of producing silent captures.
 - PCM microphone capture through AudioWorklet when available.
 - ScriptProcessor fallback for browsers that cannot load the AudioWorklet recorder.
 - Browser-side mono PCM16 WAV encoding.
