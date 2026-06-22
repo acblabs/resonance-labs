@@ -42,6 +42,7 @@ Implemented:
 - SvelteKit web app with a desktop-first active probe screen.
 - Browser-first probe workflow that requires no special hardware or downloadable app for end-user captures.
 - Web Audio microphone permission and AudioContext unlock flow.
+- AudioContext running-state checks before chirp scheduling so blocked or suspended browser playback produces a visible error instead of a silent upload.
 - Log chirp generation with conservative amplitude defaults.
 - AudioWorklet PCM capture with ScriptProcessor fallback.
 - Browser-side mono PCM16 WAV encoding.
@@ -93,7 +94,7 @@ In another shell, start the web app:
 npm.cmd --workspace @resonancelab/web run dev
 ```
 
-Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. End-user probing is a web workflow; it does not require special acoustic hardware or installing a separate app. Do not use headphones or earbuds for active probing. The signal panel can switch between waveform, FFT, STFT, mel-spectrogram, matched impulse-response, and deconvolved-response views after the API returns.
+Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. End-user probing is a web workflow; it does not require special acoustic hardware or installing a separate app. Do not use headphones or earbuds for active probing. If the browser blocks or suspends playback, the UI reports the audio playback issue before upload. The signal panel can switch between waveform, FFT, STFT, mel-spectrogram, matched impulse-response, and deconvolved-response views after the API returns.
 
 After a successful probe, export JSON or PNG reports from the Lab UI. JSON reports are the preferred public-safe artifact for validation records because they contain derived DSP evidence without raw WAV bytes and minimize reflected browser metadata.
 

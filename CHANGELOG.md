@@ -76,6 +76,7 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Fixed
 
+- Browser probes now verify that the Web Audio context is running before chirp playback and fail visibly if playback is blocked or interrupted.
 - Gemini explanation calls now request a single top-level JSON object and safely unwrap a single object returned inside an array before grounding.
 - Hosted Gemini failures now return generic client-facing errors while preserving detailed diagnostics in structured logs.
 - Empty Gemini explanation responses now include finish-reason and token-usage diagnostics.

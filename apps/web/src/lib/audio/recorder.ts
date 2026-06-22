@@ -33,6 +33,9 @@ type CaptureStatus =
   | 'Encoding WAV'
   | 'Uploading';
 
+const AUDIO_CONTEXT_RUNNING_TIMEOUT_MS = 1000;
+const AUDIO_CONTEXT_TIMING_GRACE_MS = 1500;
+
 const SAFE_MEDIA_TRACK_SETTING_KEYS = [
   'autoGainControl',
   'channelCount',
@@ -59,7 +62,7 @@ export async function captureProbe(
 
   onStatus('Opening audio context');
   const audioContext = new AudioContextCtor();
-  await audioContext.resume();
+  await ensureAudioContextRunning(audioContext);
 
   const requestedConstraints: MediaStreamConstraints = {
     audio: {
@@ -75,11 +78,15 @@ export async function captureProbe(
 
   let recorder: RecorderHandle | null = null;
   try {
+    await ensureAudioContextRunning(audioContext);
     recorder = await createRecorder(audioContext, stream);
+    await ensureAudioContextRunning(audioContext);
+
     const recordingStartedAt = audioContext.currentTime;
     const chirpStartedAt = recordingStartedAt + safeConfig.pre_roll_ms / 1000;
     const chirpEndedAt = chirpStartedAt + safeConfig.duration_ms / 1000;
     const captureEndedAt = chirpEndedAt + safeConfig.post_roll_ms / 1000;
+    await ensureAudioContextRunning(audioContext);
     const chirpPlayback = playChirp(audioContext, safeConfig, chirpStartedAt);
 
     onStatus('Recording pre-roll');
@@ -307,7 +314,76 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function waitUntilContextTime(audioContext: AudioContext, targetTime: number): Promise<void> {
-  const delayMs = Math.max(0, (targetTime - audioContext.currentTime) * 1000);
-  return sleep(delayMs);
+async function ensureAudioContextRunning(audioContext: AudioContext): Promise<void> {
+  if (audioContext.state === 'closed') {
+    throw new Error('Audio playback stopped before the probe could run.');
+  }
+
+  if (audioContext.state !== 'running') {
+    await audioContext.resume();
+  }
+
+  if (audioContext.state === 'running') {
+    return;
+  }
+
+  const running = await waitForAudioContextState(
+    audioContext,
+    'running',
+    AUDIO_CONTEXT_RUNNING_TIMEOUT_MS
+  );
+  if (!running) {
+    throw new Error(
+      'Audio playback is blocked or suspended. Allow site sound, keep this tab active, and try Start Probe again.'
+    );
+  }
+}
+
+function waitForAudioContextState(
+  audioContext: AudioContext,
+  expectedState: AudioContextState,
+  timeoutMs: number
+): Promise<boolean> {
+  if (audioContext.state === expectedState) {
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      resolve(audioContext.state === expectedState);
+    }, timeoutMs);
+
+    const onStateChange = () => {
+      if (audioContext.state === expectedState) {
+        cleanup();
+        resolve(true);
+      }
+    };
+
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      audioContext.removeEventListener('statechange', onStateChange);
+    };
+
+    audioContext.addEventListener('statechange', onStateChange);
+  });
+}
+
+async function waitUntilContextTime(audioContext: AudioContext, targetTime: number): Promise<void> {
+  const expectedDelayMs = Math.max(0, (targetTime - audioContext.currentTime) * 1000);
+  const deadline = performance.now() + expectedDelayMs + AUDIO_CONTEXT_TIMING_GRACE_MS;
+
+  while (audioContext.currentTime < targetTime) {
+    await ensureAudioContextRunning(audioContext);
+
+    const remainingMs = Math.max(0, (targetTime - audioContext.currentTime) * 1000);
+    if (performance.now() > deadline && remainingMs > 0) {
+      throw new Error(
+        'Audio playback was interrupted before the probe completed. Keep the tab active and try Start Probe again.'
+      );
+    }
+
+    await sleep(Math.min(Math.max(remainingMs, 16), 50));
+  }
 }
