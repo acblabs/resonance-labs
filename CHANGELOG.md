@@ -6,6 +6,7 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Added
 
+- README data-flow diagram showing the browser probe, FastAPI analysis, deterministic DSP, report export, and explanation path.
 - Compact zero-padded regularized impulse-envelope proxy in `/api/v1/analyze`, report exports, and DSP regression tests.
 - Matched-filter impulse-response traces alongside regularized deconvolved-response traces in `/api/v1/analyze`, the Lab UI, and PNG report exports.
 - MFCC summary statistics from log-mel/DCT cepstral coefficients.
@@ -47,6 +48,7 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Changed
 
+- Documented ResonanceLab as an easy browser-based workflow that requires no special hardware or downloadable app for end-user probes.
 - Documented ResonanceLab as an active acoustic machine listening project across the main README, feature list, and measurement/limitations docs.
 - Cloud Build step images, Docker base images, and direct Python requirements are now pinned; API and web production containers now run as non-root users.
 - Acoustic report exports now minimize reflected browser metadata while preserving repeatability signals.

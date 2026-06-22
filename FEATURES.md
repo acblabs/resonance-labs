@@ -1,12 +1,14 @@
 # Features
 
-ResonanceLab is an active acoustic sensing and **machine listening** project for room fingerprints and acoustic reports. The current path is intentionally narrow: capture a reliable chirp response, extract deterministic DSP evidence, visualize the response, and avoid claims that a single speaker/microphone can produce a spatial room map.
+ResonanceLab is an active acoustic sensing and **machine listening** project for room fingerprints and acoustic reports. It is intentionally easy to try: no special hardware, no downloadable app, and no external recorder are required for standard browser probes. The current path is intentionally narrow: capture a reliable chirp response, extract deterministic DSP evidence, visualize the response, and avoid claims that a single speaker/microphone can produce a spatial room map.
 
 Within machine listening, ResonanceLab is best described as active acoustic machine listening: the system emits a known probe signal, listens to the room/device response, and derives repeatable acoustic evidence rather than trying to classify speech, recognize arbitrary sound events, or infer a full spatial model.
 
 ## Current Platform Features
 
 - Browser-based active acoustic probe workflow.
+- No special hardware required for end-user probes; the workflow uses the device speaker, microphone, and supported browser.
+- No downloadable desktop or mobile app required for the Lab UI.
 - Conservative logarithmic chirp generation with configurable start frequency, end frequency, duration, pre-roll, post-roll, amplitude, and fade.
 - Microphone permission flow from a direct user gesture.
 - AudioContext unlock flow for browser playback and capture.

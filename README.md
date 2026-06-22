@@ -1,14 +1,46 @@
 # ResonanceLab
 
-ResonanceLab is an open-source, sound-only active acoustic sensing platform for room acoustic fingerprints. This project falls under **machine listening**: it uses computational audio analysis to listen to an emitted chirp response and describe acoustic evidence from a space. The app plays a short logarithmic chirp, records the speaker/microphone response, extracts deterministic DSP features, and renders waveform, FFT, STFT, mel-spectrogram, matched impulse response, deconvolved response, decay, transfer-response, MFCC, caveat, and room-mode descriptors.
+ResonanceLab is an open-source, sound-only active acoustic sensing platform for room acoustic fingerprints. This project falls under **machine listening**: it uses computational audio analysis to listen to an emitted chirp response and describe acoustic evidence from a space. It is designed as an easy web app: no special measurement hardware, no downloadable desktop or mobile app, just a supported browser with access to the device speaker and microphone. The app plays a short logarithmic chirp, records the speaker/microphone response, extracts deterministic DSP features, and renders waveform, FFT, STFT, mel-spectrogram, matched impulse response, deconvolved response, decay, transfer-response, MFCC, caveat, and room-mode descriptors.
 
 The current product direction is **Room Acoustic Fingerprint** plus **Acoustic Image Export**. In machine-listening terms, ResonanceLab is focused on active acoustic measurement and room-response evidence, not speech recognition, general audio event detection, object-state claims, or geometry reconstruction from a single speaker and microphone.
+
+## Data Flow
+
+```mermaid
+flowchart LR
+    user["User in browser"] --> start["Start Probe"]
+
+    subgraph browser["Browser web app"]
+        start --> chirp["Generate log chirp"]
+        chirp --> playback["Play through device speaker"]
+        capture["Capture microphone PCM"] --> wav["Encode browser-side WAV"]
+        results["Render plots, descriptors, caveats"]
+        export["Export JSON or PNG report"]
+    end
+
+    playback --> room["Room response"]
+    room --> capture
+    wav --> analyze["FastAPI /api/v1/analyze"]
+
+    subgraph api["API and DSP"]
+        analyze --> validate["Validate upload and run quality"]
+        validate --> dsp["Deterministic DSP pipeline"]
+        dsp --> evidence["Compact room-fingerprint evidence"]
+        evidence --> explain["Optional /api/v1/explain"]
+    end
+
+    evidence --> results
+    results --> export
+    explain --> grounded["Grounded explanation from compact DSP evidence"]
+    grounded --> results
+```
 
 ## Status
 
 Implemented:
 
 - SvelteKit web app with a desktop-first active probe screen.
+- Browser-first probe workflow that requires no special hardware or downloadable app for end-user captures.
 - Web Audio microphone permission and AudioContext unlock flow.
 - Log chirp generation with conservative amplitude defaults.
 - AudioWorklet PCM capture with ScriptProcessor fallback.
@@ -61,7 +93,7 @@ In another shell, start the web app:
 npm.cmd --workspace @resonancelab/web run dev
 ```
 
-Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. Do not use headphones or earbuds for active probing. The signal panel can switch between waveform, FFT, STFT, mel-spectrogram, matched impulse-response, and deconvolved-response views after the API returns.
+Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. End-user probing is a web workflow; it does not require special acoustic hardware or installing a separate app. Do not use headphones or earbuds for active probing. The signal panel can switch between waveform, FFT, STFT, mel-spectrogram, matched impulse-response, and deconvolved-response views after the API returns.
 
 After a successful probe, export JSON or PNG reports from the Lab UI. JSON reports are the preferred public-safe artifact for validation records because they contain derived DSP evidence without raw WAV bytes and minimize reflected browser metadata.
 

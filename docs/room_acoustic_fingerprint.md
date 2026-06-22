@@ -4,6 +4,8 @@ ResonanceLab now treats speaker-to-microphone bleed and room reflections as the 
 
 This is a machine listening workflow. The system listens to a known emitted chirp and turns the measured response into structured acoustic evidence about the space, while keeping the scope to room-response fingerprints rather than spatial reconstruction or general sound understanding.
 
+The workflow is meant to be easy to access: it runs as a web app and uses the device's normal speaker and microphone instead of requiring special measurement hardware or a downloaded app.
+
 ## What The Fingerprint Shows
 
 - **Chirp response**: the recorded waveform aligned against the emitted logarithmic sweep.
@@ -21,6 +23,7 @@ A single speaker and single microphone do not provide an acoustic aperture. The 
 ## Measurement Guidance
 
 - Keep the device position, orientation, volume, and browser fixed when checking repeat stability.
+- Use the built-in or attached speaker and microphone; no calibrated measurement rig is required for exploratory captures.
 - Avoid headphones and earbuds.
 - Use the same chirp settings across repeat captures.
 - Repeat the capture without moving the device to estimate stability.

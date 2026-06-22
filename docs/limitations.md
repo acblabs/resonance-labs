@@ -5,6 +5,7 @@ ResonanceLab is a machine listening project that produces acoustic fingerprints 
 Known limitations:
 
 - A single speaker and single microphone cannot reconstruct a spatial map or floor plan.
+- No special hardware is required for exploratory captures, but ordinary device speakers and microphones are not calibrated measurement instruments.
 - Browser audio processing can distort amplitude, decay, and spectral features.
 - Device speaker-to-microphone direct path is part of the response and may dominate some captures.
 - Mobile browser behavior is not verified until real devices are tested.

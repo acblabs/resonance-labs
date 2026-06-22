@@ -1,6 +1,6 @@
 # Browser Audio Notes
 
-The app uses a user-initiated Web Audio flow:
+The app uses a user-initiated Web Audio flow. End users do not need special acoustic hardware or a downloadable desktop/mobile app; a supported browser, speaker, and microphone are enough to run the probe workflow.
 
 1. Create and resume `AudioContext` from the `Start Probe` button.
 2. Request microphone access with echo cancellation, noise suppression, and automatic gain control set to `false`.
