@@ -144,18 +144,19 @@ async def explain(request: Request, payload: LlmExplainRequest) -> LlmExplainRes
     try:
         return explain_probe_result(payload, settings, request_id=_request_id(request))
     except LlmExplanationError as exc:
+        request_id = _request_id(request)
         log_event(
             logger,
             "explain_rejected",
             level=logging.WARNING,
-            request_id=_request_id(request),
+            request_id=request_id,
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             analysis_id=payload.analysis.analysis_id,
             reason=str(exc),
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
+            detail="Hosted explanation is unavailable. Use the request ID for diagnostics.",
         ) from exc
 
 
@@ -172,8 +173,8 @@ def _parse_metadata(raw_metadata: str) -> ProbeMetadata:
         return ProbeMetadata.model_validate(payload)
     except ValidationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=exc.errors(),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=exc.errors(include_context=False),
         ) from exc
 
 

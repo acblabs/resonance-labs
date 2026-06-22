@@ -43,9 +43,13 @@ All notable changes to ResonanceLab will be documented in this file.
 - FastAPI analysis endpoint with WAV metrics and DSP features.
 - Docker Compose development stack.
 - Local Git hook and project freshness checker for README, CHANGELOG, FEATURES, and SKILL.md files.
+- Supply-chain pin checker for Dockerfiles, Cloud Build step images, and direct Python requirements.
 
 ### Changed
 
+- Cloud Build step images, Docker base images, and direct Python requirements are now pinned; API and web production containers now run as non-root users.
+- Acoustic report exports now minimize reflected browser metadata while preserving repeatability signals.
+- Operator questions for hosted explanations are treated as untrusted context and excluded from valid evidence references.
 - Raised the default Gemini explanation output cap and wired it through Cloud Build deployment substitutions.
 - Consolidated planned-feature documentation and removed completed phase labels from project docs.
 - Lab layout now uses more of wide desktop viewports with sticky controls, a larger signal panel, and denser result grids.
@@ -70,6 +74,7 @@ All notable changes to ResonanceLab will be documented in this file.
 ### Fixed
 
 - Gemini explanation calls now request a single top-level JSON object and safely unwrap a single object returned inside an array before grounding.
+- Hosted Gemini failures now return generic client-facing errors while preserving detailed diagnostics in structured logs.
 - Empty Gemini explanation responses now include finish-reason and token-usage diagnostics.
 - Lab UI and report exports now share room-character and brightness descriptor thresholds instead of duplicating frontend logic.
 - LLM explanation requests now exclude raw WAV bytes and full high-dimensional signal grids from the hosted model path.

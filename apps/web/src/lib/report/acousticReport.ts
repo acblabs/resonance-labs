@@ -87,29 +87,87 @@ const DRY_RT60_SECONDS = 0.25;
 const LIVE_RT60_SECONDS = 0.75;
 const DARK_CENTROID_HZ = 1200;
 const BRIGHT_CENTROID_HZ = 3500;
+const REPORT_SAFE_MEDIA_SETTING_KEYS = [
+  "autoGainControl",
+  "channelCount",
+  "echoCancellation",
+  "latency",
+  "noiseSuppression",
+  "sampleRate",
+  "sampleSize",
+];
 
 export function buildAcousticReport(
   analysis: AnalysisResponse,
   explanation?: LlmExplainResponse | null,
   generatedAt = new Date(),
 ): AcousticReport {
+  const reportAnalysis = minimizeAnalysisForReport(analysis);
   return {
     schema_version: "resonancelab.acoustic_report.v1",
     explainability_version: 1,
     generated_at: generatedAt.toISOString(),
-    analysis_id: analysis.analysis_id,
+    analysis_id: reportAnalysis.analysis_id,
     title: "ResonanceLab Room Acoustic Fingerprint",
-    descriptors: buildDescriptors(analysis),
-    validation: buildDeviceValidation(analysis),
+    descriptors: buildDescriptors(reportAnalysis),
+    validation: buildDeviceValidation(reportAnalysis),
     method_notes: buildMethodNotes(),
-    analysis,
+    analysis: reportAnalysis,
     explanation: explanation?.explanation ?? null,
     caveats: [
       "This report is an acoustic fingerprint, not a spatial reconstruction.",
       "Browser audio processing, device placement, playback volume, and room noise affect repeatability.",
       "Raw PCM data and WAV bytes are not included in this report export.",
-      ...buildAnalysisCaveats(analysis),
+      ...buildAnalysisCaveats(reportAnalysis),
     ],
+  };
+}
+
+export function minimizeAnalysisForReport(
+  analysis: AnalysisResponse,
+): AnalysisResponse {
+  return {
+    analysis_id: analysis.analysis_id,
+    status: analysis.status,
+    audio: {
+      content_type: analysis.audio.content_type,
+      filename: null,
+      byte_count: analysis.audio.byte_count,
+      sample_rate_hz: analysis.audio.sample_rate_hz,
+      channels: analysis.audio.channels,
+      sample_width_bytes: analysis.audio.sample_width_bytes,
+      frame_count: analysis.audio.frame_count,
+      sample_count: analysis.audio.sample_count,
+      duration_seconds: analysis.audio.duration_seconds,
+      rms: analysis.audio.rms,
+      peak_amplitude: analysis.audio.peak_amplitude,
+      dc_offset: analysis.audio.dc_offset,
+    },
+    probe: {
+      client_recorded_at: null,
+      probe_config: { ...analysis.probe.probe_config },
+      browser: {
+        user_agent: null,
+        audio_context_sample_rate_hz:
+          analysis.probe.browser.audio_context_sample_rate_hz,
+        media_track_settings: safeMediaTrackSettings(
+          analysis.probe.browser.media_track_settings,
+        ),
+        requested_constraints: {},
+        capture_path: analysis.probe.browser.capture_path,
+        recording_started_at_context_seconds:
+          analysis.probe.browser.recording_started_at_context_seconds,
+        chirp_started_at_context_seconds:
+          analysis.probe.browser.chirp_started_at_context_seconds,
+        chirp_ended_at_context_seconds:
+          analysis.probe.browser.chirp_ended_at_context_seconds,
+        capture_ended_at_context_seconds:
+          analysis.probe.browser.capture_ended_at_context_seconds,
+      },
+    },
+    alignment: { ...analysis.alignment, notes: [...analysis.alignment.notes] },
+    dsp: analysis.dsp,
+    warnings: [...analysis.warnings],
   };
 }
 
@@ -1039,6 +1097,22 @@ function comparisonCaveats(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function safeMediaTrackSettings(
+  settings: Record<string, unknown>,
+): Record<string, unknown> {
+  const safe: Record<string, unknown> = {};
+  for (const key of REPORT_SAFE_MEDIA_SETTING_KEYS) {
+    const value = settings[key];
+    if (
+      typeof value === "boolean" ||
+      (typeof value === "number" && Number.isFinite(value))
+    ) {
+      safe[key] = value;
+    }
+  }
+  return safe;
 }
 
 function statusAtLeast({

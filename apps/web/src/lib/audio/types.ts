@@ -16,10 +16,10 @@ export type ProbeConfig = {
 };
 
 export type BrowserCaptureMetadata = {
-  user_agent: string;
-  audio_context_sample_rate_hz: number;
-  media_track_settings: MediaTrackSettings;
-  requested_constraints: MediaStreamConstraints;
+  user_agent: string | null;
+  audio_context_sample_rate_hz: number | null;
+  media_track_settings: Record<string, unknown>;
+  requested_constraints: Record<string, unknown>;
   capture_path: CapturePath;
   recording_started_at_context_seconds?: number;
   chirp_started_at_context_seconds?: number;
@@ -28,7 +28,7 @@ export type BrowserCaptureMetadata = {
 };
 
 export type ProbeMetadata = {
-  client_recorded_at: string;
+  client_recorded_at: string | null;
   probe_config: ProbeConfig;
   browser: BrowserCaptureMetadata;
 };

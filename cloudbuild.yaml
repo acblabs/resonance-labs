@@ -35,20 +35,20 @@ options:
 
 steps:
   - id: project-hygiene-and-api-tests
-    name: python:3.13-slim
+    name: python:3.13-slim@sha256:c33f0bc4364a6881bed1ec0cc2665e6c53c87a43e774aaeab88e6f17af105e4f
     entrypoint: bash
     args:
       - -c
       - |
-        python -m pip install --upgrade pip
         python -m pip install -r requirements-dev.txt
+        python scripts/check_supply_chain.py
         python scripts/check_project_docs.py --all
         python -m compileall packages services/api scripts
         python -m ruff check .
         python -m pytest
 
   - id: web-check-and-build
-    name: node:22-slim
+    name: node:22-slim@sha256:d9f850096136edbc402debdd8729579a288aac64574ada0ff4db26b6ae58b0b2
     entrypoint: bash
     args:
       - -c
@@ -59,7 +59,7 @@ steps:
         npm --workspace @resonancelab/web run build
 
   - id: build-api-image
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:d7e6d16d720cb25ac16d3bd49f213d8ae4b3b0e45797b89e10eaee07ef7877a5
     args:
       - build
       - -f
@@ -69,7 +69,7 @@ steps:
       - .
 
   - id: build-web-image
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:d7e6d16d720cb25ac16d3bd49f213d8ae4b3b0e45797b89e10eaee07ef7877a5
     args:
       - build
       - -f
@@ -79,7 +79,7 @@ steps:
       - .
 
   - id: push-api-image
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:d7e6d16d720cb25ac16d3bd49f213d8ae4b3b0e45797b89e10eaee07ef7877a5
     entrypoint: bash
     args:
       - -c
@@ -94,7 +94,7 @@ steps:
         docker push "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_API_IMAGE}:$BUILD_ID"
 
   - id: push-web-image
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:d7e6d16d720cb25ac16d3bd49f213d8ae4b3b0e45797b89e10eaee07ef7877a5
     entrypoint: bash
     args:
       - -c
@@ -109,7 +109,7 @@ steps:
         docker push "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_WEB_IMAGE}:$BUILD_ID"
 
   - id: deploy-api
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:02ba53c5a1920500dfb193777595f019be4d81802207e99fd97504cb4fadb873
     entrypoint: bash
     args:
       - -c
@@ -165,7 +165,7 @@ steps:
           --set-env-vars "^|^RESONANCELAB_ENV=cloud|RESONANCELAB_MAX_UPLOAD_BYTES=${_API_MAX_UPLOAD_BYTES}|RESONANCELAB_MAX_RECORDING_SECONDS=${_API_MAX_RECORDING_SECONDS}$${LLM_ENV}"
 
   - id: deploy-web
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:02ba53c5a1920500dfb193777595f019be4d81802207e99fd97504cb4fadb873
     entrypoint: bash
     args:
       - -c
@@ -193,7 +193,7 @@ steps:
           --set-env-vars "PUBLIC_API_URL=$${API_URL},RESONANCELAB_ENV=cloud"
 
   - id: update-api-cors
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk@sha256:02ba53c5a1920500dfb193777595f019be4d81802207e99fd97504cb4fadb873
     entrypoint: bash
     args:
       - -c

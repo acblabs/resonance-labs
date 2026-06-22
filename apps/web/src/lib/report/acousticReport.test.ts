@@ -31,6 +31,41 @@ describe("acoustic report helpers", () => {
     expect(report.method_notes.join(" ")).toContain("regularized driven-path");
     expect(report.method_notes.join(" ")).toContain("impulse envelope");
     expect(report.analysis.dsp.decay_bands).toHaveLength(3);
+    expect(report.analysis.audio.filename).toBeNull();
+    expect(report.analysis.probe.client_recorded_at).toBeNull();
+    expect(report.analysis.probe.browser.user_agent).toBeNull();
+    expect(findForbiddenKeys(report)).toEqual([]);
+  });
+
+  it("minimizes identifying metadata in exported reports", () => {
+    const analysis = makeAnalysis({
+      mediaTrackSettings: {
+        autoGainControl: false,
+        deviceId: "private-device-id",
+        echoCancellation: true,
+        groupId: "private-group-id",
+        noiseSuppression: false,
+        sampleRate: 48000,
+      },
+    });
+    analysis.probe.browser.requested_constraints = {
+      audio: {
+        deviceId: "private-device-id",
+      },
+    };
+
+    const report = buildAcousticReport(analysis);
+
+    expect(report.analysis.audio.filename).toBeNull();
+    expect(report.analysis.probe.client_recorded_at).toBeNull();
+    expect(report.analysis.probe.browser.user_agent).toBeNull();
+    expect(report.analysis.probe.browser.requested_constraints).toEqual({});
+    expect(report.analysis.probe.browser.media_track_settings).toEqual({
+      autoGainControl: false,
+      echoCancellation: true,
+      noiseSuppression: false,
+      sampleRate: 48000,
+    });
     expect(findForbiddenKeys(report)).toEqual([]);
   });
 
@@ -238,7 +273,7 @@ function makeAnalysis(
     fitR2?: number | null;
     rt60Seconds?: number | null;
     qFactor?: number | null;
-    mediaTrackSettings?: Partial<MediaTrackSettings>;
+    mediaTrackSettings?: Record<string, unknown>;
   } = {},
 ): AnalysisResponse {
   const alignmentConfidence = overrides.alignmentConfidence ?? 0.72;
@@ -287,7 +322,7 @@ function makeAnalysis(
           noiseSuppression: false,
           autoGainControl: false,
           ...overrides.mediaTrackSettings,
-        } as MediaTrackSettings,
+        },
         requested_constraints: {},
         capture_path: overrides.capturePath ?? "audio_worklet",
       },
@@ -441,7 +476,14 @@ function validationCheck(analysis: AnalysisResponse, id: string) {
 }
 
 function findForbiddenKeys(value: unknown): string[] {
-  const forbidden = new Set(["wavBlob", "samples", "raw_audio", "rawAudio"]);
+  const forbidden = new Set([
+    "deviceId",
+    "groupId",
+    "raw_audio",
+    "rawAudio",
+    "samples",
+    "wavBlob",
+  ]);
   if (Array.isArray(value)) {
     return value.flatMap((item) => findForbiddenKeys(item));
   }

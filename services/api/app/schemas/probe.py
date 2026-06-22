@@ -5,8 +5,28 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from resonancelab.dsp import DEFAULT_DECAY_BANDS_HZ, IMPULSE_RESPONSE_MAX_POINTS
+
+SAFE_MEDIA_TRACK_SETTING_KEYS = frozenset(
+    {
+        "autoGainControl",
+        "channelCount",
+        "echoCancellation",
+        "latency",
+        "noiseSuppression",
+        "sampleRate",
+        "sampleSize",
+    }
+)
+SAFE_REQUESTED_AUDIO_CONSTRAINT_KEYS = frozenset(
+    {
+        "autoGainControl",
+        "channelCount",
+        "echoCancellation",
+        "noiseSuppression",
+    }
+)
 
 
 class HealthResponse(BaseModel):
@@ -44,7 +64,7 @@ class ProbeConfig(BaseModel):
 
 
 class BrowserCaptureMetadata(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     user_agent: str | None = None
     audio_context_sample_rate_hz: int | None = Field(default=None, ge=8000, le=192000)
@@ -58,9 +78,45 @@ class BrowserCaptureMetadata(BaseModel):
     chirp_ended_at_context_seconds: float | None = None
     capture_ended_at_context_seconds: float | None = None
 
+    @field_validator("media_track_settings")
+    @classmethod
+    def validate_media_track_settings(cls, value: dict[str, Any]) -> dict[str, Any]:
+        extra_keys = sorted(set(value) - SAFE_MEDIA_TRACK_SETTING_KEYS)
+        if extra_keys:
+            raise ValueError(
+                "media_track_settings contains unsupported keys: "
+                + ", ".join(extra_keys)
+            )
+        return value
+
+    @field_validator("requested_constraints")
+    @classmethod
+    def validate_requested_constraints(cls, value: dict[str, Any]) -> dict[str, Any]:
+        allowed_top_level = {"audio"}
+        extra_top_level = sorted(set(value) - allowed_top_level)
+        if extra_top_level:
+            raise ValueError(
+                "requested_constraints contains unsupported keys: "
+                + ", ".join(extra_top_level)
+            )
+
+        audio = value.get("audio")
+        if audio is None or isinstance(audio, bool):
+            return value
+        if not isinstance(audio, dict):
+            raise ValueError("requested_constraints.audio must be an object or boolean.")
+
+        extra_audio_keys = sorted(set(audio) - SAFE_REQUESTED_AUDIO_CONSTRAINT_KEYS)
+        if extra_audio_keys:
+            raise ValueError(
+                "requested_constraints.audio contains unsupported keys: "
+                + ", ".join(extra_audio_keys)
+            )
+        return value
+
 
 class ProbeMetadata(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     client_recorded_at: str | None = None
     probe_config: ProbeConfig = Field(default_factory=ProbeConfig)

@@ -39,7 +39,9 @@ These invariants must not be weakened without explicit security review:
 *   **Strict server-side upload validation**: Validate content type, upload size, recording duration, WAV structure, decoded size, RMS/peak/DC sanity, sample rate, channels, and metadata before DSP work.
 *   **Deterministic fallback remains authoritative**: Hosted LLM explanations are additive. The deterministic explain path must remain complete, tested, and available when hosted calls are disabled or fail.
 *   **LLM claims require evidence grounding**: LLM claim objects must cite leaf JSON Pointers into the supplied evidence packet. Drop or replace unresolvable, over-broad, or unsupported claims with deterministic fallback text.
+*   **Operator questions are context, not evidence**: Free-text operator questions may guide explanation focus, but they must not be included in the evidence packet or valid evidence-reference list.
 *   **Security logs are compact and non-sensitive**: Log request IDs, analysis IDs, validation outcomes, rejection reasons, quality signals, and LLM outcomes. Do not log raw audio, full prompts/responses, secrets, or high-dimensional signal grids.
+*   **Report exports minimize reflected metadata**: JSON and PNG report paths must keep public-safe DSP evidence while dropping filenames, user-agent strings, device IDs, group IDs, requested constraints, and arbitrary client-supplied metadata.
 
 ---
 
@@ -91,7 +93,7 @@ Use this workflow for security reviews and architecture changes:
 
 *   Treat fork pull requests and external build triggers as untrusted. Do not expose deploy credentials or secrets to untrusted workflows.
 *   Keep the build identity least-privileged for building, pushing, and deploying only the intended services.
-*   Pin base images and dependencies. Avoid unpinned `latest` tags and remote install scripts in builds.
+*   Pin base images and dependencies. Keep Dockerfile `FROM` lines and Cloud Build step images digest-pinned, keep direct Python dependencies exact-pinned unless a reviewed lockfile/hash workflow replaces them, and avoid unpinned `latest` tags or remote install scripts in builds.
 *   Use Artifact Registry vulnerability scanning, dependency scanning, secret scanning, SBOM generation, SLSA-style provenance, and image signing as the project matures.
 *   Consider Binary Authorization or deploy admission checks before allowing higher-sensitivity workloads.
 
@@ -146,6 +148,7 @@ The current AI boundary is optional Vertex Gemini explanation over compact DSP e
 ### 7.1 Prompt and Data Boundary
 
 *   Separate system instructions from user- or analysis-derived data. Treat every user-influenced field as untrusted.
+*   Treat operator questions as untrusted prompt context, not citable evidence.
 *   Strip unnecessary identifiers before hosted model calls.
 *   Keep the system prompt static, scoped to explaining acoustic reports, and explicit about prohibited claims: no raw audio, no geometry reconstruction, no identity inference, no medical/legal/safety conclusions, and no certainty beyond evidence.
 
@@ -215,9 +218,9 @@ Use mappings to communicate coverage, not to imply certification or one-to-one e
 | **Cloud Run** | Gen2, explicit CORS, resource caps, safe timeouts, scoped env vars. | Unbounded concurrency, wildcard credentialed CORS, or secrets in images. |
 | **Uploads** | Layered validation, bounded decode, content-type and WAV checks. | Trusting client metadata or decoding unbounded binaries. |
 | **LLM Path** | Compact grounded JSON, IAM auth, disabled by default, deterministic fallback. | Raw WAV/PCM/full grids to a hosted model or ungrounded claims. |
-| **Reports** | Derived JSON/PNG only with caveats and local comparison first. | Raw audio retention or public sharing without review. |
+| **Reports** | Derived JSON/PNG only with minimized metadata, caveats, and local comparison first. | Raw audio retention, arbitrary metadata reflection, or public sharing without review. |
 | **Secrets** | Secret Manager, KMS where needed, secret scanning and rotation. | Secrets in source, logs, Docker images, or local notes committed to git. |
-| **Supply Chain** | Pinned deps/images, scanning, SBOM/provenance, reviewed deploy identity. | Untrusted fork workflows with deploy credentials or unpinned `latest` images. |
+| **Supply Chain** | Digest-pinned images, exact direct dependency pins, scanning, SBOM/provenance, reviewed deploy identity. | Untrusted fork workflows with deploy credentials, unpinned build images, or floating direct dependency ranges. |
 | **Observability** | Request IDs, rejection reasons, quality signals, LLM outcomes. | Raw audio, secrets, full prompts/responses, or high-dimensional grids in logs. |
 
 ---

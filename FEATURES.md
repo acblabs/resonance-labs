@@ -23,7 +23,9 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 - Pre-commit enforcement that requires `FEATURES.md` to be updated in every commit.
 - Cloud security architect skill covering GCP hardening, AppSec, AI/ML security, threat modeling, incident response, and framework mappings.
 - Structured API logs with request IDs, request duration, analyze rejection reasons, analysis quality signals, LLM outcomes, and degradation markers.
+- Hosted LLM failures return generic client-facing 503 details while preserving provider diagnostics in structured logs.
 - Configurable `RESONANCELAB_LOG_LEVEL` for API logging verbosity.
+- Strict probe metadata schemas reject arbitrary extra client fields before analysis.
 - Client-side probe safety clamping before chirp playback.
 - Cosine-tapered chirps to reduce broadband envelope clicks.
 - Batched AudioWorklet PCM capture to reduce allocation pressure.
@@ -72,6 +74,7 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 - Decay-window and decay-fit diagnostics with low/mid/high decay-band visualization.
 - MFCC summary table for compact spectral-envelope statistics.
 - JSON acoustic report export with schema version, descriptors, validation results, compact DSP evidence, caveats, and optional explanation output.
+- JSON acoustic report export minimizes browser metadata by dropping filenames, user-agent strings, requested constraints, device IDs, group IDs, and arbitrary client fields.
 - PNG acoustic report export with summary metrics, mel acoustic image, transfer bands, dominant modes, validation checks, and caveats.
 - PNG acoustic report export now includes capture metadata, matched impulse/deconvolved response traces, and low/mid/high decay bands.
 - Golden public-safe report analysis fixture covering report-building and validation semantics.
@@ -83,6 +86,7 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 - Lab UI explanation panel for observations, acoustic hypotheses, experiment design assistance, physics tutoring, low-confidence troubleshooting, evidence critique, caveats, and next-measurement guidance.
 - Optional Gemini lab-assistant path using `gemini-3.1-pro-preview`, `global`, and `HIGH` thinking level through Cloud Run service identity.
 - Raw WAV files are excluded from the LLM explanation request path by schema and UI behavior.
+- Operator questions are treated as untrusted prompt context and are excluded from valid evidence references.
 - Public Cloud Run deploys keep Gemini LLM calls disabled by default while preserving the deterministic explanation response.
 - Run-quality validation counterfactuals that show the margin or minimal operational change needed to reach preferred thresholds.
 - Shared descriptor thresholds for report and Lab UI room-character/brightness labels, with nearest-threshold counterfactual text.
@@ -95,6 +99,9 @@ ResonanceLab is an active acoustic sensing project for room fingerprints and aco
 - Artifact Registry push steps gated behind the deploy target.
 - Cloud Run API and web service deployment with configurable memory, CPU, concurrency, timeout, min-instance, and max-instance substitutions.
 - Explicit second-generation Cloud Run execution environment and startup CPU boost for API and web deploys.
+- Digest-pinned Docker base images and Cloud Build step images.
+- Non-root production API and web containers.
+- Supply-chain check script that enforces digest-pinned images and exact direct Python dependency pins in Cloud Build.
 - Runtime discovery of the deployed API URL before deploying the web service.
 - API CORS update using both generated Cloud Run web service URL forms plus optional extra origins.
 - Cloud Build substitutions for the API service can enable Vertex Gemini explanations without introducing another Cloud Run service.

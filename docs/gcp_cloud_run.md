@@ -9,6 +9,7 @@ Use `cloudbuild.yaml` for PR validation and the single Cloud Run service pair:
 - Gemini explanations are optional on the API service. The deterministic `/api/v1/explain` endpoint is always available, but hosted LLM calls stay disabled by default through `RESONANCELAB_LLM_ENABLED=false`.
 - The web service uses the project-number API URL, and API CORS allows both Cloud Run URL forms for the web service: the `status.url` hostname and the project-number hostname.
 - API and web deployments explicitly use the Cloud Run second-generation execution environment with startup CPU boost enabled.
+- Cloud Build step images and Docker base images are digest-pinned, and the production API/web containers run as non-root users.
 
 The live topology is one API service and one web service.
 
@@ -60,12 +61,13 @@ Prefer Application Default Credentials or Cloud Build service identities over do
 When `_DEPLOY_TARGET=cloud-run`, Cloud Build runs:
 
 1. Python checks, docs checks, Ruff, and Pytest.
-2. SvelteKit check and build.
-3. API and web container builds.
-4. Image pushes to Artifact Registry.
-5. API deployment with upload and recording-duration guardrails.
-6. Web deployment with `PUBLIC_API_URL` set to the project-number API URL.
-7. API CORS update with both Cloud Run web URL forms.
+2. Supply-chain pin checks for Dockerfiles, Cloud Build step images, and direct Python requirements.
+3. SvelteKit check and build.
+4. API and web container builds.
+5. Image pushes to Artifact Registry.
+6. API deployment with upload and recording-duration guardrails.
+7. Web deployment with `PUBLIC_API_URL` set to the project-number API URL.
+8. API CORS update with both Cloud Run web URL forms.
 
 Both Cloud Run services are deployed with `--execution-environment=gen2` and `--cpu-boost`. The default API deployment sets `RESONANCELAB_LLM_ENABLED=false`; the explanation endpoint still returns a deterministic DSP summary without making an LLM call.
 
@@ -77,7 +79,7 @@ The lab assistant uses structured evidence only:
 analysis JSON -> /api/v1/explain -> deterministic JSON or Gemini text JSON
 ```
 
-Do not send browser WAV blobs or full STFT/mel grids to the LLM path. The API schema rejects the raw-audio opt-in flag and compacts FFT/STFT/mel data before any hosted model call.
+Do not send browser WAV blobs or full STFT/mel grids to the LLM path. The API schema rejects the raw-audio opt-in flag and compacts FFT/STFT/mel data before any hosted model call. Operator questions are supplied as untrusted context only and are not valid evidence refs for grounded claims.
 
 To enable hosted Gemini explanations on the existing API service, keep `_DEPLOY_TARGET=cloud-run` and set:
 

@@ -33,6 +33,16 @@ type CaptureStatus =
   | 'Encoding WAV'
   | 'Uploading';
 
+const SAFE_MEDIA_TRACK_SETTING_KEYS = [
+  'autoGainControl',
+  'channelCount',
+  'echoCancellation',
+  'latency',
+  'noiseSuppression',
+  'sampleRate',
+  'sampleSize'
+];
+
 export async function captureProbe(
   config: ProbeConfig,
   onStatus: (status: CaptureStatus) => void
@@ -252,8 +262,8 @@ function buildMetadata({
   const browser: BrowserCaptureMetadata = {
     user_agent: navigator.userAgent,
     audio_context_sample_rate_hz: audioContext.sampleRate,
-    media_track_settings: track?.getSettings() ?? {},
-    requested_constraints: requestedConstraints,
+    media_track_settings: safeMediaTrackSettings(track?.getSettings() ?? {}),
+    requested_constraints: requestedConstraints as Record<string, unknown>,
     capture_path: capturePath,
     recording_started_at_context_seconds: timing.recordingStartedAt,
     chirp_started_at_context_seconds: timing.chirpStartedAt,
@@ -266,6 +276,20 @@ function buildMetadata({
     probe_config: config,
     browser
   };
+}
+
+function safeMediaTrackSettings(settings: MediaTrackSettings): Record<string, unknown> {
+  const safe: Record<string, unknown> = {};
+  for (const key of SAFE_MEDIA_TRACK_SETTING_KEYS) {
+    const value = settings[key as keyof MediaTrackSettings];
+    if (
+      typeof value === 'boolean' ||
+      (typeof value === 'number' && Number.isFinite(value))
+    ) {
+      safe[key] = value;
+    }
+  }
+  return safe;
 }
 
 function mergeChunks(chunks: Float32Array[]): Float32Array {

@@ -25,9 +25,11 @@ Implemented:
 - Exportable JSON and PNG acoustic reports from the Lab UI.
 - Deterministic `/api/v1/explain` fallback plus optional Gemini lab-assistant integration for observations, acoustic hypotheses, experiment design, physics tutoring, low-confidence troubleshooting, evidence critique, and next-measurement guidance over compact structured DSP evidence only.
 - Explainability metadata for `/api/v1/explain`, including leaf JSON Pointer evidence refs, refs-resolved claim objects, authoritative evidence values, and ungrounded-claim fallback behavior.
+- LLM prompt-injection hardening that treats operator questions as untrusted context instead of citable evidence and returns generic hosted-provider failures to clients.
 - Validation and descriptor counterfactuals that show the margin or minimal input change needed to flip run-quality and room-fingerprint labels.
 - Docker Compose for the web/API pair.
-- Cloud Build checks, image builds, and opt-in Cloud Run deployment.
+- Cloud Build checks, supply-chain pin checks, image builds, and opt-in Cloud Run deployment with digest-pinned build images.
+- Non-root API and web production containers with digest-pinned base images.
 - Local Git hook checks for README, CHANGELOG, FEATURES, and project SKILL.md freshness.
 
 Still manual:
@@ -61,7 +63,7 @@ npm.cmd --workspace @resonancelab/web run dev
 
 Open `http://localhost:5173`, press `Start Probe`, allow the microphone, and keep speakers active. Do not use headphones or earbuds for active probing. The signal panel can switch between waveform, FFT, STFT, mel-spectrogram, matched impulse-response, and deconvolved-response views after the API returns.
 
-After a successful probe, export JSON or PNG reports from the Lab UI. JSON reports are the preferred public-safe artifact for validation records because they contain derived DSP evidence without raw WAV bytes.
+After a successful probe, export JSON or PNG reports from the Lab UI. JSON reports are the preferred public-safe artifact for validation records because they contain derived DSP evidence without raw WAV bytes and minimize reflected browser metadata.
 
 ## Docker Compose
 
@@ -90,7 +92,7 @@ See `FEATURES.md` for the current and planned feature list.
 
 The response includes upload/decode health, matched-filter alignment metadata, compact spectral grids, MFCC summaries, transfer-response bands, response traces, low-mode groups, dominant peaks, decay features, caveats, and warnings.
 
-`POST /api/v1/explain` accepts analysis JSON and `include_raw_audio=false`. It never accepts raw audio. By default it returns a deterministic DSP explanation with experiment design help, physics tutoring, low-confidence troubleshooting, and evidence critique; set `RESONANCELAB_LLM_ENABLED=true` on the API service to call Gemini through Vertex AI / Gemini Enterprise Agent Platform. The request body is capped by `RESONANCELAB_MAX_EXPLAIN_BODY_BYTES` and defaults to 512 KiB; Gemini output is capped by `RESONANCELAB_LLM_MAX_OUTPUT_TOKENS`, which defaults to 8192 so high-thinking calls have room to return compact JSON.
+`POST /api/v1/explain` accepts analysis JSON and `include_raw_audio=false`. It never accepts raw audio. Optional `operator_question` text is treated as untrusted context and is not part of the citable evidence refs. By default it returns a deterministic DSP explanation with experiment design help, physics tutoring, low-confidence troubleshooting, and evidence critique; set `RESONANCELAB_LLM_ENABLED=true` on the API service to call Gemini through Vertex AI / Gemini Enterprise Agent Platform. The request body is capped by `RESONANCELAB_MAX_EXPLAIN_BODY_BYTES` and defaults to 512 KiB; Gemini output is capped by `RESONANCELAB_LLM_MAX_OUTPUT_TOKENS`, which defaults to 8192 so high-thinking calls have room to return compact JSON.
 
 Explain responses include compatibility string arrays plus richer claim arrays with JSON Pointer evidence references. Hosted Gemini calls request single-object JSON claim output, and the API computes grounding metadata after resolving refs. See `docs/explainability.md` for grounding rules and counterfactual semantics.
 
@@ -122,7 +124,7 @@ Use `[skip docs]` in a commit message only when a docs update would be noise. Th
 
 ## Cloud Build
 
-`cloudbuild.yaml` is the GCP CI/build entry point. It runs project hygiene checks, API tests, SvelteKit checks/builds, and builds the API and web container images. By default it does not push or deploy; a main-branch Cloud Build trigger can set `_DEPLOY_TARGET=cloud-run` to push images, deploy `resonancelab-api` and `resonancelab-web` to second-generation Cloud Run services with startup CPU boost, wire `PUBLIC_API_URL`, and update API CORS. Gemini explanations can be enabled on the same API service with `_LLM_ENABLED=true` after granting the runtime service account Vertex AI access; `_LLM_MAX_OUTPUT_TOKENS` controls the hosted explanation output budget.
+`cloudbuild.yaml` is the GCP CI/build entry point. It runs project hygiene checks, supply-chain pin checks, API tests, SvelteKit checks/builds, and builds the API and web container images. Build-step images and Docker base images are digest-pinned. By default it does not push or deploy; a main-branch Cloud Build trigger can set `_DEPLOY_TARGET=cloud-run` to push images, deploy `resonancelab-api` and `resonancelab-web` to second-generation Cloud Run services with startup CPU boost, wire `PUBLIC_API_URL`, and update API CORS. Gemini explanations can be enabled on the same API service with `_LLM_ENABLED=true` after granting the runtime service account Vertex AI access; `_LLM_MAX_OUTPUT_TOKENS` controls the hosted explanation output budget.
 
 Keep project IDs, service account details, and deployment-specific substitutions in GCP trigger settings or ignored local files, not in the public repo. See `docs/gcp_cloud_run.md`.
 
@@ -130,6 +132,7 @@ Keep project IDs, service account details, and deployment-specific substitutions
 
 ```powershell
 python -m compileall packages services/api scripts
+python scripts/check_supply_chain.py
 python -m ruff check .
 python -m pytest
 python scripts/check_project_docs.py --all
