@@ -1,6 +1,6 @@
 # Measurement Protocol
 
-ResonanceLab measures room acoustic fingerprints from active chirp captures. The API returns spectral, transfer-response, response-trace, decay, caveat, and quality features; it does not make calibrated physical-property predictions.
+ResonanceLab measures room acoustic fingerprints from active chirp captures. This places the project under machine listening, specifically active acoustic machine listening: a known sound is emitted, the response is recorded, and deterministic DSP evidence is derived from what the system hears. The API returns spectral, transfer-response, response-trace, decay, caveat, and quality features; it does not make calibrated physical-property predictions.
 
 For early manual tests:
 

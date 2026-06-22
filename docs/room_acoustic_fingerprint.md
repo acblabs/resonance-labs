@@ -2,6 +2,8 @@
 
 ResonanceLab now treats speaker-to-microphone bleed and room reflections as the signal instead of the nuisance. A single chirp capture can produce a repeatable acoustic fingerprint of a space: alignment quality, broad transfer-response coloration, spectrogram texture, decay behavior, and dominant modal peaks.
 
+This is a machine listening workflow. The system listens to a known emitted chirp and turns the measured response into structured acoustic evidence about the space, while keeping the scope to room-response fingerprints rather than spatial reconstruction or general sound understanding.
+
 ## What The Fingerprint Shows
 
 - **Chirp response**: the recorded waveform aligned against the emitted logarithmic sweep.

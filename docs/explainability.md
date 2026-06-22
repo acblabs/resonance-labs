@@ -1,6 +1,6 @@
 # Explainability
 
-ResonanceLab explanations are built around deterministic DSP evidence. The goal is traceability, not post-hoc approximation.
+ResonanceLab explanations are built around deterministic DSP evidence from an active acoustic machine listening workflow. The goal is traceability, not post-hoc approximation.
 
 ## Principles
 

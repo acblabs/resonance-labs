@@ -47,6 +47,7 @@ All notable changes to ResonanceLab will be documented in this file.
 
 ### Changed
 
+- Documented ResonanceLab as an active acoustic machine listening project across the main README, feature list, and measurement/limitations docs.
 - Cloud Build step images, Docker base images, and direct Python requirements are now pinned; API and web production containers now run as non-root users.
 - Acoustic report exports now minimize reflected browser metadata while preserving repeatability signals.
 - Operator questions for hosted explanations are treated as untrusted context and excluded from valid evidence references.

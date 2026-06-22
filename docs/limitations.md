@@ -1,6 +1,6 @@
 # Limitations
 
-ResonanceLab produces acoustic fingerprints and visual reports, not room geometry.
+ResonanceLab is a machine listening project that produces acoustic fingerprints and visual reports, not room geometry. Its listening task is intentionally constrained to active chirp responses and derived room-response evidence.
 
 Known limitations:
 

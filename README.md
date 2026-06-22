@@ -1,8 +1,8 @@
 # ResonanceLab
 
-ResonanceLab is an open-source, sound-only active acoustic sensing platform for room acoustic fingerprints. The app plays a short logarithmic chirp, records the speaker/microphone response, extracts deterministic DSP features, and renders waveform, FFT, STFT, mel-spectrogram, matched impulse response, deconvolved response, decay, transfer-response, MFCC, caveat, and room-mode descriptors.
+ResonanceLab is an open-source, sound-only active acoustic sensing platform for room acoustic fingerprints. This project falls under **machine listening**: it uses computational audio analysis to listen to an emitted chirp response and describe acoustic evidence from a space. The app plays a short logarithmic chirp, records the speaker/microphone response, extracts deterministic DSP features, and renders waveform, FFT, STFT, mel-spectrogram, matched impulse response, deconvolved response, decay, transfer-response, MFCC, caveat, and room-mode descriptors.
 
-The current product direction is **Room Acoustic Fingerprint** plus **Acoustic Image Export**. It does not make object-state claims or claim to reconstruct room geometry from a single speaker and microphone.
+The current product direction is **Room Acoustic Fingerprint** plus **Acoustic Image Export**. In machine-listening terms, ResonanceLab is focused on active acoustic measurement and room-response evidence, not speech recognition, general audio event detection, object-state claims, or geometry reconstruction from a single speaker and microphone.
 
 ## Status
 

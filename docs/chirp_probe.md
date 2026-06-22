@@ -22,6 +22,8 @@ The chirp is intentionally conservative:
 - The UI warns against headphones and earbuds.
 - The API uses the configured chirp as a matched-filter reference.
 
+As a machine listening system, ResonanceLab listens to the response to this known probe signal instead of passively classifying arbitrary environmental audio.
+
 The DSP pipeline currently derives:
 
 - Matched-filter chirp alignment and confidence.
